@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="SshConfigs">
+    <configs>
+      <sshConfig authType="PASSWORD" connectionConfig="{&quot;serverAliveInterval&quot;:300}" host="lab.tcshust.top" id="a7c2959c-6499-4e55-8909-b8e468f5cce5" port="22" nameFormat="DESCRIPTIVE" username="mkdzir" useOpenSSHConfig="true" />
+    </configs>
+  </component>
+</project>

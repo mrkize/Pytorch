@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/ContrastiveLeaks" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/MIAELT" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/MJP" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/Swin-Transformer-offical" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/mia_prune" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/swin-transformer_noted_very_detail" vcs="Git" />
+  </component>
+</project>

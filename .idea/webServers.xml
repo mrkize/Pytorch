@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="5e4e5ea1-34dc-4986-80f6-8ef73191c562" name="NEW" url="http://lab.tcshust.top">
+        <fileTransfer accessType="SFTP" host="lab.tcshust.top" port="22" sshConfigId="a7c2959c-6499-4e55-8909-b8e468f5cce5" sshConfig="mkdzir@lab.tcshust.top:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" isUseRsync="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
