@@ -116,8 +116,8 @@ class JigsawPuzzleMaskedRegion(object):
     def __init__(self, 
         img_size=224,
         patch_size=16,
-        num_masking_patches=75,
-        min_num_patches=8,
+        num_masking_patches=4,
+        min_num_patches=4,
         mask_type="mjp" # "mjp" (ours), "pps" (MLP-Mixer, pixel shuffle per patch)
     ):
         input_size = int(img_size // patch_size)

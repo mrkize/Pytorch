@@ -1,16 +1,14 @@
 import datetime
 
 import torch
-from models.resnet_simclr import ResNetSimCLR, LinearClassifier, CombineModel
-from models.attack_model import MLP_CE
-from utils.dataset_parser.dataset_loader import GetDataLoader
+from atk_models.resnet_simclr import ResNetSimCLR, LinearClassifier
+from atk_models.attack_model import MLP_CE
 from utils.mia.attackTraining import attackTraining
 from utils.mia.metric_based_attack import AttackTrainingMetric
 from utils.mia.label_only_attack import AttackLabelOnly
-from model import load_VIT
+from VisionTransformer.mymodel.model import load_VIT
 from dataloader import model_dataloader, imgshuffle
 import numpy as np
-import time
 import os
 import argparse
 torch.manual_seed(0)

@@ -1,14 +1,17 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim import lr_scheduler
 import numpy as np
-import torchvision
-from torchvision import datasets, models, transforms
-import matplotlib.pyplot as plt
+import torch.nn.functional as F
+from timm.data import Mixup
+from timm.loss import SoftTargetCrossEntropy
+from torch.optim import lr_scheduler
 import time
-from dataloader import *
-from model import creat_VIT, load_VIT, parameter
+
+from masking_generator import JigsawPuzzleMaskedRegion
+from models.vit_timm import VisionTransformer
+from dataloader import model_dataloader
+from mymodel import ViT, ViT_mask
 
 
 
@@ -111,41 +114,28 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
     # model.load_state_dict(best_model_wts)
     return model, retunr_value_train, best_acc
 
-def predict(model, dataloaders, dataset_sizes):
+def predict(model, dataloaders, dataset_sizes, jigsaw=None):
     retunr_value_train = np.zeros((10))
     model.eval()  # Set model to evaluate mode
     running_corrects = 0
-    # TP = 0
-    # FN = 0
-    # FP = 0
-    # TN = 0
     # Iterate over data.
     for batch_idx, (data, target) in enumerate(dataloaders):
         inputs, labels = data.to(device), target.to(device)
+        if jigsaw is not None:
+            inputs, unk_mask = jigsaw(inputs)
         with torch.no_grad():
             outputs = model(inputs)
             _, preds = torch.max(outputs, 1)
             labels = torch.squeeze(labels)
         running_corrects += preds.eq(labels).sum().item()
-        # RTPR = recall = TP/(TP + FN) precision = TP/(TP + FP) FPR = FP/(FP + TN)
-        # TP += torch.sum(preds & labels.data)
-        # FN += (torch.sum(preds) - torch.sum(preds & labels.data))
-        # FP += (torch.sum(labels.data) - torch.sum(preds & labels.data))
-        # TN += (preds.shape[0] - torch.sum(preds | labels.data))
     acc = 1.0 * running_corrects / dataset_sizes
-    # precision = TP / (TP + FP)
-    # recall = TP / (TP + FN)
-    # FPR = FP / (FP + TN)
     retunr_value_train[6] = acc
-    # retunr_value_train[7] = epoch_precision.item()
-    # retunr_value_train[8] = epoch_recall.item()
-    # retunr_value_train[9] = epoch_FPR.item()
     return acc
 
 
 def train_VIT(data_loader, data_size, config, PE):
-    model_vit = creat_VIT(PE).to(device)
-    model_vit = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
+    model_vit = ViT.creat_VIT(PE).to(device)
+    # model_vit = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
     model_vit.PE = False
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model_vit.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
@@ -203,9 +193,9 @@ def train_para(vit_pos, vit_nopos, para, optimizer, scheduler, dataloaders, data
 
 
 def fitting_para(model_root, dataloaders, dataset_sizes, config):
-    vit_pos = load_VIT(model_root + 'VIT_PE.pth')
-    vit_nopos = load_VIT(model_root + 'VIT_NoPE.pth')
-    para = parameter().to(device)
+    vit_pos = ViT.load_VIT(model_root + 'VIT_PE.pth')
+    vit_nopos = ViT.load_VIT(model_root + 'VIT_NoPE.pth')
+    para = ViT.parameter().to(device)
     optimizer = optim.SGD(para.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
     ret_val = train_para(vit_pos, vit_nopos, para, optimizer, scheduler, dataloaders, dataset_sizes, num_epochs=50)
@@ -214,3 +204,99 @@ def fitting_para(model_root, dataloaders, dataset_sizes, config):
     print('para:\n',para.para)
     print('PE:\n',vit_pos.pos_embedding)
     return ret_val
+
+def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, jigsaw_pullzer, config):
+    print("DATASET SIZE", size)
+    since = time.time()
+    #save the best model
+    ret_value = np.zeros((4, config.learning.epochs))
+    # print(optimizer.state_dict()['param_groups'][0]['lr'])
+    #print('-' * 10)
+    # print("Start training: epoch ",format(epoch))
+    for epoch in range(config.learning.epochs):
+        print('Epoch {}/{}'.format(epoch, config.learning.epochs - 1))
+    # Each epoch has a training and validation phase
+        for phase in ['train', 'val']:
+            if phase == 'train':
+                model.train()  # Set model to training mode
+                scheduler.step()
+            # elif epoch%5 != 0 and epoch != num_epochs-1:
+            #     continue   #every 5 epoch execute once
+            else:
+                model.eval()   # Set model to evaluate mode
+            running_loss = 0.0
+            running_corrects = 0
+            # Iterate over data.
+            for batch_idx, (data, target) in enumerate(loader[phase]):
+                inputs, labels = data.to(device), target.to(device)
+                if mixup_fn is not None:
+                    inputs, labels = mixup_fn(inputs, labels)
+
+                unk_mask = None
+                if epoch >= config.train.warmup_epoch:
+                    if torch.rand(1) > config.train.jigsaw:
+                        inputs, unk_mask = jigsaw_pullzer(inputs)
+                        unk_mask = torch.from_numpy(unk_mask).long().to(device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward
+                # track history if only in train
+                with torch.set_grad_enabled(phase == 'train'):
+                    outputs = model(inputs, unk_mask)
+                    _, preds = torch.max(outputs, 1)
+                    # labels = torch.squeeze(labels)
+                    loss = criterion(outputs, labels)
+                    # backward + optimize only if in training phase
+                    if phase == 'train':
+                        loss.backward()
+                        optimizer.step()
+                # statistics
+
+                running_loss += loss.item() * inputs.size(0)
+                running_corrects += preds.eq(target.to(device)).sum().item()
+            epoch_loss = running_loss / size[phase]
+            epoch_acc = 1.0 * running_corrects / size[phase]
+            if phase == 'train':
+                print('train acc:{:.3f}'.format(epoch_acc), end=' ')
+                ret_value[0][epoch] = epoch_loss
+                ret_value[1][epoch] = epoch_acc
+
+            else:
+                print('val acc:{:.3f}'.format(epoch_acc))
+                ret_value[2][epoch] = epoch_loss
+                ret_value[3][epoch] = epoch_acc
+
+    time_elapsed = time.time() - since
+    print('Training complete in {:.0f}m {:.0f}s'.format(
+        time_elapsed // 60, time_elapsed % 60))
+    print("DONE TRAIN")
+
+    # load best model weights
+    # model.load_state_dict(best_model_wts)
+    return model, ret_value
+
+def mask_train_model(root_dir, config, if_mixup=False):
+    model = ViT_mask.creat_VIT().to(device)
+    mixup_fn = None
+    if if_mixup:
+        mixup_fn = Mixup(
+            mixup_alpha=0.8,num_classes=10)
+        criterion = SoftTargetCrossEntropy()
+    else:
+        criterion = torch.nn.CrossEntropyLoss()
+
+    data_loader, data_size = model_dataloader(root_dir=root_dir)
+    jigsaw_pullzer = JigsawPuzzleMaskedRegion(img_size=config.patch.img_size,
+                                              patch_size=config.patch.patch_size,
+                                              num_masking_patches=config.train.num_masking_patches,
+                                              min_num_patches=config.train.min_num_patches)
+    optimizer = optim.SGD(model.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
+    # optimizer = optim.Adam(model.parameters(), lr=config.learning.learning_rate, weight_decay=0.01)
+    # learning rate adopt
+    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
+    model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, jigsaw_pullzer, config)
+    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_mask_8.pth')
+    np.save('./results/VIT_cifar10/VIT_mask_8.pth', ret)
+    return

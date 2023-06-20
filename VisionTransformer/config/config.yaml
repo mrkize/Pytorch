@@ -4,7 +4,7 @@ path:
   model_path: Network/
 
 patch:
-  image_size: 32
+  img_size: 32
   patch_size: 8
   num_classes: 5
   dim: 96
@@ -27,7 +27,7 @@ learning:
   momentum: 0.9
   epochs: 100 #25 max 100 cifar10, 200 sinon
   decrease_lr_factor: 0.5
-  decrease_lr_every: 50
+  decrease_lr_every: 70
   ml:
     reg_lambd: 10
     n_estimators: 10000
@@ -39,8 +39,8 @@ statistics:
   number_shadow_value: [100] #[2, 10 ,20, 50, 100]
   epoch_value: [100] #[2, 10 ,20, 50, 100]
 
-distillation:
-    distill_epoch: 20
-    temperature: 1
-    alpha: 1
-    attack_batch_size: 64
+train:
+    warmup_epoch: 20
+    jigsaw: 0.5
+    num_masking_patches: 8
+    min_num_patches: 5

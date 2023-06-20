@@ -1,11 +1,16 @@
-from trainer import *
+import argparse
+from mymodel import ViT,ViT_mask
+from dataloader import model_dataloader, VITdataset, imgshuffle
+from masking_generator import JigsawPuzzleMaskedRegion
+from trainer import mask_train_model, train_VIT, predict
+import torch
 from utils import config
+from Testtool import test_mask_model_imgshuff
 
-patch_emb = PatchEmbed(image_size=32, patch_size=8, embed_dim=192)
-a=torch.zeros(10,3,32,32).to(device)
-# b = patch_emb(a)
-# print(b)
-
+parser = argparse.ArgumentParser('argument for training')
+parser.add_argument('--no_PE', action="store_true", help='whether use PE')
+opt = parser.parse_args()
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 torch.random.manual_seed(1001)
@@ -13,10 +18,15 @@ config = config()
 root_dir = '../data/cifar-10/'
 model_root = './Network/VIT_Model/'
 # pos_emb_shuffle_test(root_dir)
-
+mask_train_model(root_dir, config, if_mixup=False)
 
 #训练一个shadow model，它的训练集是原始target model的验证集
-data_loader, data_size = model_dataloader(root_dir=root_dir)
+
+# acc1, acc2 = test_mask_model_imgshuff(config, root_dir)
+
+
+
+
 # 训练使用PE的target model
 # model, ret_para = train_VIT(data_loader, data_size, config, PE=True)
 # torch.save(model.state_dict(),'./Network/VIT_Model_cifar10/VIT_PE.pth')
@@ -49,8 +59,8 @@ data_loader, data_size = model_dataloader(root_dir=root_dir)
 # model_pos = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth').to(device)
 # model_nopos = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
 # model_nopos.PE = False
-model, ret = train_VIT(data_loader, data_size, config, PE=False)
-print(ret)
+# model, ret = train_VIT(data_loader, data_size, config, PE=False)
+# print(ret)
 #
 # for batch_idx, (data, target) in enumerate(loader):
 #     inputs, labels = data.to(device), target.to(device)

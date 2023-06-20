@@ -1,3 +1,5 @@
 *.pth
+*.png
+*.npy
 /data
 /ILSVRC2012_img_val.tar

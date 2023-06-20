@@ -1,98 +1,52 @@
-# Data manipulation
-import pandas as pd # for data manipulation
-import numpy as np # for data manipulation
 
-# Visualization
-import plotly.express as px # for data visualization
+import timm
+
 import matplotlib.pyplot as plt # for showing handwritten digits
 
-# Skleran
-from sklearn.datasets import load_digits # for MNIST data
-from sklearn.model_selection import train_test_split # for splitting data into train and test samples
-
-# UMAP dimensionality reduction
 from umap import UMAP
 
-# Load digits data
-digits = load_digits()
+model = timm.create_model('swin_tiny_patch4_window7_224', pretrained=True)
 
-# Load arrays containing digit data (64 pixels per image) and their true labels
-X, y = load_digits(return_X_y=True)
-
-# Some stats
-print('Shape of digit images: ', digits.images.shape)
-print('Shape of X (main data): ', X.shape)
-print('Shape of y (true labels): ', y.shape)
-
-# Display images of the first 10 digits
-fig, axs = plt.subplots(2, 5, sharey=False, tight_layout=True, figsize=(12,6), facecolor='white')
-n=0
-plt.gray()
-for i in range(0,2):
-    for j in range(0,5):
-        axs[i,j].matshow(digits.images[n])
-        axs[i,j].set(title=y[n])
-        n=n+1
-plt.show()
-
-
-def chart(X, y):
-    # --------------------------------------------------------------------------#
-    # This section is not mandatory as its purpose is to sort the data by label
-    # so, we can maintain consistent colors for digits across multiple graphs
-
-    # Concatenate X and y arrays
-    arr_concat = np.concatenate((X, y.reshape(y.shape[0], 1)), axis=1)
-    # Create a Pandas dataframe using the above array
-    df = pd.DataFrame(arr_concat, columns=['x', 'y', 'z', 'label'])
-    # Convert label data type from float to integer
-    df['label'] = df['label'].astype(int)
-    # Finally, sort the dataframe by label
-    df.sort_values(by='label', axis=0, ascending=True, inplace=True)
-    # --------------------------------------------------------------------------#
-
-    # Create a 3D graph
-    fig = px.scatter_3d(df, x='x', y='y', z='z', color=df['label'].astype(str), height=900, width=950)
-
-    # Update chart looks
-    fig.update_layout(title_text='UMAP',
-                      showlegend=True,
-                      legend=dict(orientation="h", yanchor="top", y=0, xanchor="center", x=0.5),
-                      scene_camera=dict(up=dict(x=0, y=0, z=1),
-                                        center=dict(x=0, y=0, z=-0.1),
-                                        eye=dict(x=1.5, y=-1.4, z=0.5)),
-                      margin=dict(l=0, r=0, b=0, t=0),
-                      scene=dict(xaxis=dict(backgroundcolor='white',
-                                            color='black',
-                                            gridcolor='#f0f0f0',
-                                            title_font=dict(size=10),
-                                            tickfont=dict(size=10),
-                                            ),
-                                 yaxis=dict(backgroundcolor='white',
-                                            color='black',
-                                            gridcolor='#f0f0f0',
-                                            title_font=dict(size=10),
-                                            tickfont=dict(size=10),
-                                            ),
-                                 zaxis=dict(backgroundcolor='lightgrey',
-                                            color='black',
-                                            gridcolor='#f0f0f0',
-                                            title_font=dict(size=10),
-                                            tickfont=dict(size=10),
-                                            )))
-    # Update marker size
-    fig.update_traces(marker=dict(size=3, line=dict(color='black', width=0.1)))
-
-    fig.show()
-
+color = ['b', 'coral', 'peachpuff', 'sandybrown', 'linen', 'tan', 'orange', 'gold', 'darkkhaki', 'yellow', 'chartreuse', 'green', 'turquoise', 'skyblue']
 # Configure UMAP hyperparameters
+# model = model.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
+
+PE = model.pos_embed[0].detach().numpy()
+# PE = model.pos_embed[0,:,:].detach().numpy()
+# print(PE.shape)
 reducer = UMAP(n_neighbors=100, # default 15, The size of local neighborhood (in terms of number of neighboring sample points) used for manifold approximation.
-               n_components=3, # default 2, The dimension of the space to embed into.
+               n_components=2, # default 2, The dimension of the space to embed into.
                n_epochs=1000, # default None, The number of training epochs to be used in optimizing the low dimensional embedding. Larger values result in more accurate embeddings.
               )
 
 # Fit and transform the data
-X_trans = reducer.fit_transform(X)
+X_trans = reducer.fit_transform(PE)
 
 # Check the shape of the new data
-print('Shape of X_trans: ', X_trans.shape)
+# print('Shape of X_trans: ', X_trans.shape)
+fig = plt.figure( figsize=(20,12), dpi=160 )
+plt.scatter(X_trans[0,0],X_trans[0,1], c='r')
+for co in range(14):
+    plt.scatter(X_trans[14*co+1:14*(co+1)+1,0],X_trans[14*co+1:14*(co+1)+1,1], c=color[co])
+
+
+for i in range(PE.shape[0]):
+    plt.annotate(str(i), xy = (X_trans[i,0], X_trans[i,1]), xytext = (X_trans[i,0]+0.05, X_trans[i,1]+0.05))
+
+#3 设置刻度及步长
+# z = range(40)
+# x_label = ['11:{}'.format(i) for i in x]
+# plt.xticks( x[::5], x_label[::5])
+# plt.yticks(z[::5])  #5是步长
+
+#4 添加网格信息
+plt.grid(True, linestyle='--', alpha=0.5) #默认是True，风格设置为虚线，alpha为透明度
+
+#5 添加标题（中文在plt中默认乱码，不乱码的方法在本文最后说明）
+plt.xlabel('Time')
+plt.ylabel('Temperature')
+plt.title('Curve of Temperature Change with Time')
+
+#6 保存图片，并展示
+plt.savefig('all.png')
+plt.close(fig)
