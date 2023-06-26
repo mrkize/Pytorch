@@ -11,7 +11,7 @@ import time
 from masking_generator import JigsawPuzzleMaskedRegion
 from models.vit_timm import VisionTransformer
 from dataloader import model_dataloader
-from mymodel import ViT, ViT_mask
+from mymodel import ViT, ViT_mask, ViT_mask_plus
 
 
 
@@ -136,7 +136,7 @@ def predict(model, dataloaders, dataset_sizes, jigsaw=None):
 def train_VIT(data_loader, data_size, config, PE):
     model_vit = ViT.creat_VIT(PE).to(device)
     # model_vit = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
-    model_vit.PE = False
+    # model_vit.PE = False
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(model_vit.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
     # optimizer = optim.Adam(model.parameters(), lr=config.learning.learning_rate, weight_decay=0.01)
@@ -233,10 +233,13 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
                     inputs, labels = mixup_fn(inputs, labels)
 
                 unk_mask = None
-                if epoch >= config.train.warmup_epoch:
-                    if torch.rand(1) > config.train.jigsaw:
-                        inputs, unk_mask = jigsaw_pullzer(inputs)
-                        unk_mask = torch.from_numpy(unk_mask).long().to(device)
+                if epoch >= config.train.warmup_epoch and torch.rand(1) > config.train.jigsaw:
+                    inp, unk_mask = jigsaw_pullzer(inputs)
+                    unk_mask = torch.from_numpy(unk_mask).long().to(device)
+
+                # if phase == 'val':
+                #     if torch.rand(1) > config.train.jigsaw:
+                #         inputs, _ = jigsaw_pullzer(inputs)
 
                 # zero the parameter gradients
                 optimizer.zero_grad()
@@ -244,7 +247,7 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs, unk_mask)
+                    outputs = model(inputs, unk_mask=unk_mask)
                     _, preds = torch.max(outputs, 1)
                     # labels = torch.squeeze(labels)
                     loss = criterion(outputs, labels)
@@ -277,17 +280,23 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
     # model.load_state_dict(best_model_wts)
     return model, ret_value
 
-def mask_train_model(root_dir, config, if_mixup=False):
-    model = ViT_mask.creat_VIT().to(device)
+def mask_train_model(type, config, data_loader, data_size, if_mixup=False, PEratio=0.5):
+
+    if type == 'mask' or type == 'mask_shadow':
+        model = ViT_mask.creat_VIT().to(device)
+    elif type == 'mask_plus' or type == 'mask_plus_shadow':
+        model = ViT_mask_plus.creat_VIT(PEratio=PEratio).to(device)
+    else:
+        model = ViT.creat_VIT().to(device)
     mixup_fn = None
     if if_mixup:
         mixup_fn = Mixup(
             mixup_alpha=0.8,num_classes=10)
         criterion = SoftTargetCrossEntropy()
     else:
-        criterion = torch.nn.CrossEntropyLoss()
+        criterion = nn.CrossEntropyLoss()
 
-    data_loader, data_size = model_dataloader(root_dir=root_dir)
+
     jigsaw_pullzer = JigsawPuzzleMaskedRegion(img_size=config.patch.img_size,
                                               patch_size=config.patch.patch_size,
                                               num_masking_patches=config.train.num_masking_patches,
@@ -297,6 +306,6 @@ def mask_train_model(root_dir, config, if_mixup=False):
     # learning rate adopt
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
     model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, jigsaw_pullzer, config)
-    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_mask_8.pth')
-    np.save('./results/VIT_cifar10/VIT_mask_8.pth', ret)
+    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_'+type+'.pth')
+    np.save('./results/VIT_cifar10/VIT_'+type+'.pth', ret)
     return

@@ -5,10 +5,13 @@ from masking_generator import JigsawPuzzleMaskedRegion
 from trainer import mask_train_model, train_VIT, predict
 import torch
 from utils import config
-from Testtool import test_mask_model_imgshuff
+from Testtool import test_mask_model_imgshuff, test_mask_model, predict_cmp
 
 parser = argparse.ArgumentParser('argument for training')
 parser.add_argument('--no_PE', action="store_true", help='whether use PE')
+parser.add_argument('--store', type=str, default='plus', help='store name')
+parser.add_argument('--pe_type', type=str, default='mask', help='PE type')
+parser.add_argument('--val', type=str, default='all', help='PE type')
 opt = parser.parse_args()
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -16,15 +19,26 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.random.manual_seed(1001)
 config = config()
 root_dir = '../data/cifar-10/'
-model_root = './Network/VIT_Model/'
+model_dir = './Network/VIT_Model_cifar10/VIT_'
 # pos_emb_shuffle_test(root_dir)
-mask_train_model(root_dir, config, if_mixup=False)
+# data_loader, data_size = model_dataloader(root_dir=root_dir)
+# mask_train_model('mask_plus', config, data_loader, data_size, if_mixup=False, PEratio=0.5)
+# loader = {'train': data_loader['val'], 'val': data_loader['train']}
+# size = {'train': data_size['val'], 'val': data_size['train']}
+# mask_train_model('mask_plus_shadow', config, loader, size, if_mixup=False, PEratio=0.5)
 
 #训练一个shadow model，它的训练集是原始target model的验证集
+if opt.val == 'all':
+    dataset = VITdataset(root_dir=root_dir)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False)
+    size = len(dataset)
+else:
+    loader, size = model_dataloader(root_dir=root_dir)
+    loader, size = loader['val'], size['val']
 
-# acc1, acc2 = test_mask_model_imgshuff(config, root_dir)
+test_mask_model(config, loader, size, model_dir)
 
-
+test_mask_model(config, root_dir, model_dir, val)
 
 
 # 训练使用PE的target model

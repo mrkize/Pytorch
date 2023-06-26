@@ -27,7 +27,7 @@ learning:
   momentum: 0.9
   epochs: 100 #25 max 100 cifar10, 200 sinon
   decrease_lr_factor: 0.5
-  decrease_lr_every: 70
+  decrease_lr_every: 50
   ml:
     reg_lambd: 10
     n_estimators: 10000
@@ -43,4 +43,4 @@ train:
     warmup_epoch: 20
     jigsaw: 0.5
     num_masking_patches: 8
-    min_num_patches: 5
+    min_num_patches: 2

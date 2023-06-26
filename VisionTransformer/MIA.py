@@ -162,6 +162,11 @@ print("Using device:", device)
 imgshuffle = imgshuffle(patch_ratio=opt.ptr, pixel_ratio=opt.pxr, shf_dim=opt.shf_dim)
 data_loader, data_size = model_dataloader(root_dir='../data/cifar-10/',c_fn=imgshuffle)
 target_train_loader, target_test_loader, shadow_train_loader, shadow_test_loader = data_loader['train'], data_loader['val'], data_loader['val'], data_loader['train']
+if opt.model == 'VIT':
+    target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
+    shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
+
+
 if opt.no_PE == False:
     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
     shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')

@@ -1,20 +1,23 @@
-
+import numpy as np
 import timm
-
+import torch
 import matplotlib.pyplot as plt # for showing handwritten digits
-
+from mymodel import ViT,ViT_mask
 from umap import UMAP
 
-model = timm.create_model('swin_tiny_patch4_window7_224', pretrained=True)
+
+model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
+seq_ord = torch.arange(17)
+PE = model.pos_embedding(seq_ord).detach().numpy()
 
 color = ['b', 'coral', 'peachpuff', 'sandybrown', 'linen', 'tan', 'orange', 'gold', 'darkkhaki', 'yellow', 'chartreuse', 'green', 'turquoise', 'skyblue']
 # Configure UMAP hyperparameters
 # model = model.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
 
-PE = model.pos_embed[0].detach().numpy()
+# PE = model.pos_embed[0].detach().numpy()
 # PE = model.pos_embed[0,:,:].detach().numpy()
 # print(PE.shape)
-reducer = UMAP(n_neighbors=100, # default 15, The size of local neighborhood (in terms of number of neighboring sample points) used for manifold approximation.
+reducer = UMAP(n_neighbors=15, # default 15, The size of local neighborhood (in terms of number of neighboring sample points) used for manifold approximation.
                n_components=2, # default 2, The dimension of the space to embed into.
                n_epochs=1000, # default None, The number of training epochs to be used in optimizing the low dimensional embedding. Larger values result in more accurate embeddings.
               )
@@ -26,8 +29,8 @@ X_trans = reducer.fit_transform(PE)
 # print('Shape of X_trans: ', X_trans.shape)
 fig = plt.figure( figsize=(20,12), dpi=160 )
 plt.scatter(X_trans[0,0],X_trans[0,1], c='r')
-for co in range(14):
-    plt.scatter(X_trans[14*co+1:14*(co+1)+1,0],X_trans[14*co+1:14*(co+1)+1,1], c=color[co])
+for co in range(4):
+    plt.scatter(X_trans[4*co+1:4*(co+1)+1,0],X_trans[4*co+1:4*(co+1)+1,1], c=color[co])
 
 
 for i in range(PE.shape[0]):
@@ -48,5 +51,5 @@ plt.ylabel('Temperature')
 plt.title('Curve of Temperature Change with Time')
 
 #6 保存图片，并展示
-plt.savefig('all.png')
+plt.savefig('all_mask_4.png')
 plt.close(fig)
