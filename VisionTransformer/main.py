@@ -5,7 +5,7 @@ from masking_generator import JigsawPuzzleMaskedRegion
 from trainer import mask_train_model, train_VIT, predict
 import torch
 from utils import config
-from Testtool import test_mask_model_imgshuff, test_mask_model, predict_cmp
+from Testtool import test_mask_model_imgshuff, test_mask_model, predict_cmp, Privacy_laekage
 
 parser = argparse.ArgumentParser('argument for training')
 parser.add_argument('--no_PE', action="store_true", help='whether use PE')
@@ -28,17 +28,18 @@ model_dir = './Network/VIT_Model_cifar10/VIT_'
 # mask_train_model('mask_plus_shadow', config, loader, size, if_mixup=False, PEratio=0.5)
 
 #训练一个shadow model，它的训练集是原始target model的验证集
-if opt.val == 'all':
-    dataset = VITdataset(root_dir=root_dir)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False)
-    size = len(dataset)
-else:
-    loader, size = model_dataloader(root_dir=root_dir)
-    loader, size = loader['val'], size['val']
+# if opt.val == 'all':
+#     dataset = VITdataset(root_dir=root_dir)
+#     loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False)
+#     size = len(dataset)
+# else:
+#     loader, size = model_dataloader(root_dir=root_dir)
+#     loader, size = loader['val'], size['val']
+loader, size = model_dataloader(root_dir=root_dir)
+# test_mask_model(config, loader, size, model_dir)
+Privacy_laekage(config, loader, size)
 
-test_mask_model(config, loader, size, model_dir)
-
-test_mask_model(config, root_dir, model_dir, val)
+# test_mask_model_imgshuff(config, root_dir, model_dir)
 
 
 # 训练使用PE的target model

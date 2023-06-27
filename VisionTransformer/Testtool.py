@@ -1,10 +1,13 @@
 import argparse
 
+import numpy as np
+
 from mymodel import ViT,ViT_mask,ViT_mask_plus
 from dataloader import model_dataloader, VITdataset, imgshuffle
 from masking_generator import JigsawPuzzleMaskedRegion
 from trainer import mask_train_model, train_VIT, predict
 import torch
+import torch.nn.functional as F
 from utils import config
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -66,7 +69,36 @@ def test_mask_model_imgshuff(config, root_dir, model_dir, val='all'):
     return
 
 # 评估模型位置编码的隐私泄露问题，使用
-def Privacy_laekage(model, loader):
+def Privacy_laekage(config, loader, size):
+    model1 = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth').to(device)
+    model2 = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth').to(device)
+    jigsaw = JigsawPuzzleMaskedRegion(img_size=config.patch.img_size,
+                                              patch_size=config.patch.patch_size
+                                              )
+    for phase in ['train', 'val']:
+        sum=0
+        for batch_idx, (data, target) in enumerate(loader[phase]):
+            inputs, labels = data.to(device), target.to(device)
+            inputs_mask, _ = jigsaw(inputs)
+            out = F.softmax(model1(inputs),dim=1)
+            out_mask = F.softmax(model1(inputs_mask),dim=1)
+            cross1 = torch.nn.functional.cross_entropy(out,out_mask)
+            out = F.softmax(model2(inputs),dim=1)
+            out_mask = F.softmax(model2(inputs_mask),dim=1)
+            cross2 = torch.nn.functional.cross_entropy(out,out_mask)
+            if cross1>cross2:
+                sum+=1
+        print('{} cross:{}'.format(phase,sum/(batch_idx+1)))
     return
 
 
+def quick_sort():
+    return
+
+
+
+
+
+
+def shf_attack():
+    return

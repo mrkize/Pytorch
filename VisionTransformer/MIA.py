@@ -1,13 +1,14 @@
 import datetime
-
+import shfattacktrain
 import torch
 from atk_models.resnet_simclr import ResNetSimCLR, LinearClassifier
 from atk_models.attack_model import MLP_CE
 from utils.mia.attackTraining import attackTraining
 from utils.mia.metric_based_attack import AttackTrainingMetric
 from utils.mia.label_only_attack import AttackLabelOnly
-from VisionTransformer.mymodel.model import load_VIT
+from mymodel import ViT,ViT_mask,ViT_mask_plus
 from dataloader import model_dataloader, imgshuffle
+
 import numpy as np
 import os
 import argparse
@@ -73,7 +74,7 @@ def parse_option():
                         help="single_label_dataset")
     parser.add_argument('--multi_label_dataset', type=list, default=["UTKFace", "CelebA", "Place365", "Place100", "Place50", "Place20"],
                         help="multi_label_dataset")
-    parser.add_argument('--mia_type', type=str, default="metric-based",
+    parser.add_argument('--mia_type', type=str, default="nn-based",
                         help="nn-based, lebel-only, metric-based")
     parser.add_argument('--select_posteriors', type=int, default=-1,
                         help='how many posteriors we select, if -1, we remains the original setting')
@@ -109,28 +110,6 @@ def parse_option():
     return opt
 
 
-def _load_encoder_model(opt):
-
-    model = ResNetSimCLR(
-        base_model=opt.model, encoder_dim=opt.encoder_dim, out_dim=opt.projection_head_out_dim)
-    model = model.to(device)
-    return model
-
-
-def _load_classifier_model(opt):
-    n_features = opt.encoder_dim
-    n_classes = opt.n_class
-
-    model = LinearClassifier(n_features, n_classes)
-    model = model.to(device)
-    return model
-
-
-def _load_model(model, checkpoint_path):
-    state_dict = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-    model.load_state_dict(state_dict)
-    model = model.to(device)
-    return model
 
 
 def write_res(wf, attack_name, res):
@@ -163,21 +142,29 @@ imgshuffle = imgshuffle(patch_ratio=opt.ptr, pixel_ratio=opt.pxr, shf_dim=opt.sh
 data_loader, data_size = model_dataloader(root_dir='../data/cifar-10/',c_fn=imgshuffle)
 target_train_loader, target_test_loader, shadow_train_loader, shadow_test_loader = data_loader['train'], data_loader['val'], data_loader['val'], data_loader['train']
 if opt.model == 'VIT':
-    target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
-    shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
-
-
-if opt.no_PE == False:
-    target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
-    shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
-else:
-    target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
-    shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
+    target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
+    shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
+elif opt.model == 'VIT_mask':
+    target_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
+    shadow_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_shadow.pth')
+elif opt.model == 'VIT_NoPE':
+    target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
+    shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
     target_combine_model.PE = False
     shadow_combine_model.PE = False
+else:
+    target_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth')
+    shadow_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus_shadow.pth')
 
-# target_combine_model.PE = False if opt.without_PE else True
-# shadow_combine_model.PE = False if opt.without_PE else True
+# if opt.no_PE == False:
+#     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
+#     shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
+# else:
+#     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
+#     shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
+#     target_combine_model.PE = False
+#     shadow_combine_model.PE = False
+
 
 if opt.select_posteriors == -1:
     attack_model = MLP_CE()
@@ -217,6 +204,30 @@ if opt.select_posteriors == -1:
                 write_res(wf, "NN-ATK-based", res)
                 write_spilt(wf)
         print("Finish")
+
+    elif opt.mia_type == "shf-nn-based":
+        attack_model = shfattacktrain.MLP_CE()
+        attack = shfattacktrain.attackTraining(opt, target_train_loader, target_test_loader,
+                                shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+
+        attack.parse_dataset()
+
+        acc_train = 0
+        acc_test = 0
+        epoch_train = opt.epochs
+        train_acc, test_acc = attack.train(epoch_train)  # train 100 epoch
+        target_train_acc, target_test_acc, shadow_train_acc, shadow_test_acc = attack.original_performance
+
+        if opt.linear_epoch == 0:
+            with open("log/model/exp_attack/mia_update.txt", "a") as wf:
+                res = [epoch_train, target_train_acc, target_test_acc,
+                       shadow_train_acc, shadow_test_acc, train_acc, test_acc]
+                write_time(wf)
+                write_config(wf, opt)
+                write_res(wf, "NN-ATK-based", res)
+                write_spilt(wf)
+        print("Finish")
+
 
     elif opt.mia_type == "metric-based":
         attack = AttackTrainingMetric(opt, target_train_loader, target_test_loader,

@@ -45,6 +45,7 @@ class MLP_CE(nn.Module):
         self.input_dim = selected_posteriors + 1
         self.fc1 = nn.Linear(self.input_dim, 32)
         self.fc2 = nn.Linear(32, 32)
+        self.fc2 = nn.Linear(32, 32)
         # self.fc3 = nn.Linear(10, 10)
         self.fc4 = nn.Linear(32, 2)
 
