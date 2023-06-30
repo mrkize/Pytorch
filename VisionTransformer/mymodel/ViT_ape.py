@@ -1,3 +1,5 @@
+import math
+
 import torch
 from torch import nn, einsum
 from einops import rearrange, repeat
@@ -5,6 +7,28 @@ from einops import rearrange, repeat
 
 def pair(t):
     return t if isinstance(t, tuple) else (t, t)
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(
+            0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        """
+        x: [seq_len, batch_size, d_model]
+        """
+        x = x + self.pe[0,:x.size(1), :]
+        return self.dropout(x)
+
 
 class PatchEmbed(nn.Module):
     """
@@ -122,7 +146,7 @@ class Transformer(nn.Module):
 
 
 class VIT(nn.Module):
-    def __init__(self, *, image_size, patch_size, dim, num_classes, depth, heads, mlp_dim, pool='cls', channels=3, dim_head=8, dropout=0., emb_dropout=0.,PEratio=0.5):
+    def __init__(self, *, image_size, patch_size, dim, num_classes, depth, heads, mlp_dim, pool='cls', channels=3, dim_head=8, dropout=0., emb_dropout=0.,PE=True):
         super().__init__()
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
@@ -133,12 +157,9 @@ class VIT(nn.Module):
         patch_dim = channels * patch_height * patch_width
         assert pool in {'cls', 'mean'}
 
-        self.epoch_threshold = 30
-        self.pe_train_nums = int(PEratio*num_patches)
         self.to_patch_embedding = PatchEmbed(image_size=image_size, patch_size=patch_size, embed_dim=patch_dim)
-        self.unk_embed_index = num_patches + 1
-        self.PE = True
-        self.pos_embedding= nn.Parameter(torch.randn(num_patches+2, patch_dim))
+        self.PE = PE
+        self.pos_embedding = PositionalEncoding(dim)
         self.cls_token = nn.Parameter(torch.randn(1, 1, patch_dim))					# nn.Parameter()定义可学习参数
         self.dropout = nn.Dropout(emb_dropout)
 
@@ -152,27 +173,15 @@ class VIT(nn.Module):
             nn.Linear(patch_dim, num_classes)
         )
 
-    def forward(self, x, unk_mask = None):
+    def forward(self, x):
         x = self.to_patch_embedding(x)       # b c (h p1) (w p2) -> b (h w) (p1 p2 c) -> b (h w) dim
         b, n, _ = x.shape           # b表示batchSize, n表示每个块的空间分辨率, _表示一个块内有多少个值
 
         cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=b)  # self.cls_token: (1, 1, dim) -> cls_tokens: (batchSize, 1, dim)
         x = torch.cat((cls_tokens, x), dim=1)               # 将cls_token拼接到patch token中去       (b, 65, dim)
         # x = para(x) if para != None else x
-        # if epoch>=self.epoch_threshold:
-        #     seq_ord = torch.full([x.size(1)], self.unk_embed_index)
-        #     update_idx = torch.randint( low=1, high=self.unk_embed_index, size=[self.pe_train_nums])
-        #     seq_ord[update_idx] = update_idx
-        #     seq_ord = seq_ord.unsqueeze(0).to(x.device)
-        #     pos_embedding = self.pos_embedding[seq_ord]
-        if unk_mask is not None:
-            seq_ord = torch.arange(x.size(1)).unsqueeze(0).to(x.device)
-            seq_ord = seq_ord * (1 - unk_mask) + unk_mask * self.unk_embed_index
-            pos_embedding = self.pos_embedding[seq_ord]
-        else:
-            pos_embedding = self.pos_embedding[:-1]
-        x += pos_embedding
-        x = self.dropout(x)
+        if self.PE == True:
+            x = self.pos_embedding(x)
 
         x = self.transformer(x)                                                 # (b, 65, dim)
 
@@ -193,7 +202,7 @@ class parameter(nn.Module):
         return x + self.para
 
 
-def creat_VIT(PEratio = 0.5):
+def creat_VIT(PE):
     model_vit = VIT(
         image_size=32,
         patch_size=8,
@@ -204,7 +213,7 @@ def creat_VIT(PEratio = 0.5):
         mlp_dim=512,
         dropout=0.1,
         emb_dropout=0.1,
-        PEratio=PEratio
+        PE = PE
     )
     return model_vit
 

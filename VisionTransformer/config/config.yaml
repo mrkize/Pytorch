@@ -6,6 +6,7 @@ path:
 patch:
   img_size: 32
   patch_size: 8
+  num_patches: 16
   num_classes: 5
   dim: 96
   depth: 2

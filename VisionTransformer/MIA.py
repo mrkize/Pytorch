@@ -6,7 +6,7 @@ from atk_models.attack_model import MLP_CE
 from utils.mia.attackTraining import attackTraining
 from utils.mia.metric_based_attack import AttackTrainingMetric
 from utils.mia.label_only_attack import AttackLabelOnly
-from mymodel import ViT,ViT_mask,ViT_mask_plus
+from mymodel import ViT,ViT_mask,ViT_mask_plus,ViT_ape,ViT_mask_avg
 from dataloader import model_dataloader, imgshuffle
 
 import numpy as np
@@ -41,7 +41,7 @@ def parse_option():
                         help='learning rate')
 
     # model dataset
-    parser.add_argument('--model', type=str, default='VIT')
+    parser.add_argument('--model', type=str, default='VIT_mask_plus')
     parser.add_argument('--dataset', type=str, default='CIFAR10',
                         help='dataset')
     parser.add_argument('--data_path', type=str, default='data/',
@@ -49,20 +49,11 @@ def parse_option():
     parser.add_argument('--mode', type=str, default='target',
                         help='control using target dataset or shadow dataset (for membership inference attack)')
 
-    parser.add_argument('--mean', type=str,
-                        help='mean of dataset in path in form of str tuple')
-    parser.add_argument('--std', type=str,
-                        help='std of dataset in path in form of str tuple')
-    parser.add_argument('--data_folder', type=str,
-                        default=None, help='path to custom dataset')
-    parser.add_argument('--size', type=int, default=32,
-                        help='parameter for RandomResizedCrop')
 
     # method
     parser.add_argument('--method', type=str, default='SimCLR',
                         choices=['SimCLR', "CE"], help='choose method')
-    parser.add_argument('--projection_head_out_dim', type=int, default=256,
-                        help='xxx')
+
 
     # linear training epochs
     parser.add_argument('--linear_epoch', type=int, default=0,
@@ -72,8 +63,6 @@ def parse_option():
     parser.add_argument("--aux_label", type=str, default='Race')
     parser.add_argument('--single_label_dataset', type=list, default=["CIFAR10", "CIFAR100", "STL10"],
                         help="single_label_dataset")
-    parser.add_argument('--multi_label_dataset', type=list, default=["UTKFace", "CelebA", "Place365", "Place100", "Place50", "Place20"],
-                        help="multi_label_dataset")
     parser.add_argument('--mia_type', type=str, default="nn-based",
                         help="nn-based, lebel-only, metric-based")
     parser.add_argument('--select_posteriors', type=int, default=-1,
@@ -144,17 +133,32 @@ target_train_loader, target_test_loader, shadow_train_loader, shadow_test_loader
 if opt.model == 'VIT':
     target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
     shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
+    # target_combine_model.PE = False
+    # shadow_combine_model.PE = False
 elif opt.model == 'VIT_mask':
     target_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
-    shadow_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_shadow.pth')
+    shadow_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
 elif opt.model == 'VIT_NoPE':
     target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
     shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
-    target_combine_model.PE = False
-    shadow_combine_model.PE = False
+    # target_combine_model.PE = False
+    # shadow_combine_model.PE = False
+elif opt.model == 'VIT_ape':
+    target_combine_model = ViT_ape.load_VIT('./Network/VIT_Model_cifar10/VIT_ape.pth')
+    shadow_combine_model = ViT_ape.load_VIT('./Network/VIT_Model_cifar10/VIT_ape_shadow.pth')
+elif opt.model == 'VIT_mask_avg':
+    target_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg.pth')
+    shadow_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_shadow.pth')
 else:
+    alpha = 0.2
     target_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth')
     shadow_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus_shadow.pth')
+    target_pe_mean = target_combine_model.pos_embedding.data[:17,].mean(0)
+    target_combine_model.pos_embedding.data = (1-alpha)*target_combine_model.pos_embedding.data + alpha*target_pe_mean
+    shadow_pe_mean = shadow_combine_model.pos_embedding.data[:17,].mean(0)
+    shadow_combine_model.pos_embedding.data = (1-alpha)*shadow_combine_model.pos_embedding.data + alpha*shadow_pe_mean
+    # target_combine_model.pos_embedding.data = target_combine_model.pos_embedding[np.repeat(17,18)]
+    # shadow_combine_model.pos_embedding.data = shadow_combine_model.pos_embedding[np.repeat(17,18)]
 
 # if opt.no_PE == False:
 #     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
@@ -224,7 +228,7 @@ if opt.select_posteriors == -1:
                        shadow_train_acc, shadow_test_acc, train_acc, test_acc]
                 write_time(wf)
                 write_config(wf, opt)
-                write_res(wf, "NN-ATK-based", res)
+                write_res(wf, "shf-nn-based", res)
                 write_spilt(wf)
         print("Finish")
 

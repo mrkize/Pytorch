@@ -20,12 +20,15 @@ torch.random.manual_seed(1001)
 config = config()
 root_dir = '../data/cifar-10/'
 model_dir = './Network/VIT_Model_cifar10/VIT_'
-# pos_emb_shuffle_test(root_dir)
-# data_loader, data_size = model_dataloader(root_dir=root_dir)
-# mask_train_model('mask_plus', config, data_loader, data_size, if_mixup=False, PEratio=0.5)
+
+data_loader, data_size = model_dataloader(root_dir=root_dir)
+# train_VIT('mask_plus', data_loader, data_size, config, PE=True)
+# mask_train_model('mask_plus_avg', config, data_loader, data_size, if_mixup=False, PEratio=0.5)
 # loader = {'train': data_loader['val'], 'val': data_loader['train']}
 # size = {'train': data_size['val'], 'val': data_size['train']}
-# mask_train_model('mask_plus_shadow', config, loader, size, if_mixup=False, PEratio=0.5)
+# train_VIT('ape_shadow', loader, size, config, PE=True)
+# mask_train_model('mask_plus_avg_shadow', config, loader, size, if_mixup=False, PEratio=0.5)
+predict_cmp(data_loader['val'], data_size['val'], model_dir)
 
 #训练一个shadow model，它的训练集是原始target model的验证集
 # if opt.val == 'all':
@@ -35,10 +38,10 @@ model_dir = './Network/VIT_Model_cifar10/VIT_'
 # else:
 #     loader, size = model_dataloader(root_dir=root_dir)
 #     loader, size = loader['val'], size['val']
-loader, size = model_dataloader(root_dir=root_dir)
+# loader, size = model_dataloader(root_dir=root_dir)
 # test_mask_model(config, loader, size, model_dir)
-Privacy_laekage(config, loader, size)
-
+# Privacy_laekage(config, loader, size)
+#
 # test_mask_model_imgshuff(config, root_dir, model_dir)
 
 

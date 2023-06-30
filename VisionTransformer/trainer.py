@@ -8,10 +8,11 @@ from timm.loss import SoftTargetCrossEntropy
 from torch.optim import lr_scheduler
 import time
 
+
 from masking_generator import JigsawPuzzleMaskedRegion
 from models.vit_timm import VisionTransformer
 from dataloader import model_dataloader
-from mymodel import ViT, ViT_mask, ViT_mask_plus
+from mymodel import ViT, ViT_mask, ViT_mask_plus, ViT_ape
 
 
 
@@ -115,7 +116,6 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
     return model, retunr_value_train, best_acc
 
 def predict(model, dataloaders, dataset_sizes, jigsaw=None):
-    retunr_value_train = np.zeros((10))
     model.eval()  # Set model to evaluate mode
     running_corrects = 0
     # Iterate over data.
@@ -129,12 +129,14 @@ def predict(model, dataloaders, dataset_sizes, jigsaw=None):
             labels = torch.squeeze(labels)
         running_corrects += preds.eq(labels).sum().item()
     acc = 1.0 * running_corrects / dataset_sizes
-    retunr_value_train[6] = acc
     return acc
 
 
-def train_VIT(data_loader, data_size, config, PE):
-    model_vit = ViT.creat_VIT(PE).to(device)
+def train_VIT(model_type, data_loader, data_size, config, PE):
+    if 'ape' in model_type:
+        model_vit = ViT_ape.creat_VIT(PE).to(device)
+    else:
+        model_vit = ViT.creat_VIT(PE).to(device)
     # model_vit = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
     # model_vit.PE = False
     criterion = nn.CrossEntropyLoss()
@@ -144,10 +146,8 @@ def train_VIT(data_loader, data_size, config, PE):
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
     # training target model
     model, ret_para, best_acc = train_model(model_vit, criterion, optimizer, exp_lr_scheduler,data_loader,data_size, num_epochs=config.learning.epochs)
-    print("The best accuracy of model is: {}".format(best_acc))
-    print("The accuracy of model(test) is: {}".format(ret_para[6][config.learning.epochs - 1]))
-    print("The accuracy of model(train) is: {}".format(ret_para[1][config.learning.epochs - 1]))
-
+    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_'+model_type+'.pth')
+    np.save('./results/VIT_cifar10/VIT_'+model_type+'.pth', ret_para)
     # if not os.path.exists(config.path.model_path + 'VIT_Model/'):
     #     os.makedirs(config.path.model_path + 'VIT_Model/')
     # if PE==True:
@@ -162,7 +162,7 @@ def train_VIT(data_loader, data_size, config, PE):
 
 def train_para(vit_pos, vit_nopos, para, optimizer, scheduler, dataloaders, dataset_sizes, num_epochs=25):
     soft = nn.Softmax(1)
-    retunr_value_train = np.zeros((num_epochs))
+    retunr_value_train = np.zeros(num_epochs)
     # dataset = torch.utils.data.ConcatDataset([dataloaders['train'], dataloaders['val']])
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -205,7 +205,7 @@ def fitting_para(model_root, dataloaders, dataset_sizes, config):
     print('PE:\n',vit_pos.pos_embedding)
     return ret_val
 
-def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, jigsaw_pullzer, config):
+def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, jigsaw_pullzer, config, inp_shf):
     print("DATASET SIZE", size)
     since = time.time()
     #save the best model
@@ -236,7 +236,7 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
                 if epoch >= config.train.warmup_epoch and torch.rand(1) > config.train.jigsaw:
                     inp, unk_mask = jigsaw_pullzer(inputs)
                     unk_mask = torch.from_numpy(unk_mask).long().to(device)
-
+                    inputs = inp if inp_shf else inputs
                 # if phase == 'val':
                 #     if torch.rand(1) > config.train.jigsaw:
                 #         inputs, _ = jigsaw_pullzer(inputs)
@@ -280,12 +280,14 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
     # model.load_state_dict(best_model_wts)
     return model, ret_value
 
-def mask_train_model(type, config, data_loader, data_size, if_mixup=False, PEratio=0.5):
-
-    if type == 'mask' or type == 'mask_shadow':
+def mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, PEratio=0.5):
+    inp_shf = False
+    if 'plus' in model_type:
+        model = ViT_mask_plus.creat_VIT().to(device)
+        inp_shf =False
+    elif 'mask' in model_type:
         model = ViT_mask.creat_VIT().to(device)
-    elif type == 'mask_plus' or type == 'mask_plus_shadow':
-        model = ViT_mask_plus.creat_VIT(PEratio=PEratio).to(device)
+        inp_shf = True
     else:
         model = ViT.creat_VIT().to(device)
     mixup_fn = None
@@ -299,13 +301,13 @@ def mask_train_model(type, config, data_loader, data_size, if_mixup=False, PErat
 
     jigsaw_pullzer = JigsawPuzzleMaskedRegion(img_size=config.patch.img_size,
                                               patch_size=config.patch.patch_size,
-                                              num_masking_patches=config.train.num_masking_patches,
+                                              num_masking_patches=int(PEratio*config.patch.num_patches),
                                               min_num_patches=config.train.min_num_patches)
     optimizer = optim.SGD(model.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
     # optimizer = optim.Adam(model.parameters(), lr=config.learning.learning_rate, weight_decay=0.01)
     # learning rate adopt
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
-    model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, jigsaw_pullzer, config)
-    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_'+type+'.pth')
-    np.save('./results/VIT_cifar10/VIT_'+type+'.pth', ret)
+    model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, jigsaw_pullzer, config, inp_shf)
+    torch.save(model.state_dict(), './Network/VIT_Model_cifar10/VIT_'+model_type+'.pth')
+    np.save('./results/VIT_cifar10/VIT_'+model_type+'.pth', ret)
     return
