@@ -26,6 +26,9 @@ import numpy as np
 
 import torch
 
+from dataloader import public_data
+
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class MaskingGenerator:
     def __init__(
             self, input_size, num_masking_patches, min_num_patches=8, max_num_patches=None,
@@ -117,11 +120,12 @@ class JigsawPuzzleMaskedRegion(object):
         img_size=224,
         patch_size=16,
         num_masking_patches=8,
-        min_num_patches=4,
-        mask_type="mjp" # "mjp" (ours), "pps" (MLP-Mixer, pixel shuffle per patch)
+        min_num_patches=2,
+        mask_type="mjp",
+        pub_data_dir = '../data/ImageNet100/Public/'
     ):
         input_size = int(img_size // patch_size)
-        self.batch_size = 1
+        self.pub_data = public_data(root_dir=pub_data_dir, img_size=img_size, patch_size=patch_size).to(device)
         self.masking_generator = MaskingGenerator(
             (input_size, input_size),
             num_masking_patches=num_masking_patches,
@@ -170,12 +174,15 @@ class JigsawPuzzleMaskedRegion(object):
             to_images = self.patches_to_im(to_patches)
             return to_images, masks
         else:
-            N, C = x.size()[:2]
+            N = x.size(0)
             to_patches = self.im_to_patches(x) # [N, C*patch_size*patch_size, seq_len]
-            seq_len = to_patches.size(-1)
-            to_patches = to_patches.view(N, C, -1, seq_len) # [N, C, patch_size*patch_size, seq_len]
-            to_patches = to_patches[:,:,torch.randperm(to_patches.size(2))]
-            to_patches = to_patches.view(N, -1, seq_len)
-            to_patches = to_patches[:,:,torch.randperm(seq_len)]
+            masks, nonzero, nonzero_shuffle = self._get_masked_indexes()
+            idx = np.arange(self.pub_data.shape[0])
+            pub_idx = np.random.choice(idx,N,replace=False).tolist()
+            # pubdata = self.pub_data[pub_idx,:,:]
+            to_patches[:,:,nonzero] = self.pub_data[pub_idx,:,:][:,:,nonzero]
+
+            cls_pad = np.zeros((1, 1), dtype=np.int32)
+            masks = np.concatenate([cls_pad, masks[np.newaxis, :]], axis=1) # [1, C+1]
             to_images = self.patches_to_im(to_patches)
-            return to_images, None
+            return to_images, masks

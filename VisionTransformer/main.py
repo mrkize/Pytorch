@@ -1,34 +1,78 @@
 import argparse
 from mymodel import ViT,ViT_mask
-from dataloader import model_dataloader, VITdataset, imgshuffle
+from dataloader import cifar_dataloader, VITdataset, imgshuffle, ImageNet_loader
 from masking_generator import JigsawPuzzleMaskedRegion
 from trainer import mask_train_model, train_VIT, predict
 import torch
-from utils import config
-from Testtool import test_mask_model_imgshuff, test_mask_model, predict_cmp, Privacy_laekage
+from utils import MyConfig
+# from Testtool import test_mask_model_imgshuff, test_mask_model, predict_cmp, Privacy_laekage
 
 parser = argparse.ArgumentParser('argument for training')
-parser.add_argument('--no_PE', action="store_true", help='whether use PE')
-parser.add_argument('--store', type=str, default='plus', help='store name')
-parser.add_argument('--pe_type', type=str, default='mask', help='PE type')
-parser.add_argument('--val', type=str, default='all', help='PE type')
+parser.add_argument('--ordinary_train', action="store_true", help='whether use mask')
+parser.add_argument('--epochs', type=int, default=1, help='training epoch')
+parser.add_argument('--config', type=str, default='IN100Swin', help='dataset')
+parser.add_argument('--model_type', type=str, default='Swin_mask_avg', help='model name')
+parser.add_argument('--mask_type', type=str, default='pub_fill', help='if fill')
+parser.add_argument('--mask_ratio', type=float, default=0.5, help='mask ratio')
 opt = parser.parse_args()
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+config_dict ={
+    'cifar10': "config/cifar10/",
+    'cifar100': "config/cifar100/",
+    'ImageNet100': "config/ViT-T/",
+    'IN100Swin': "config/Swin-T/"
+}
 
 torch.random.manual_seed(1001)
-config = config()
-root_dir = '../data/cifar-10/'
-model_dir = './Network/VIT_Model_cifar10/VIT_'
+config_path = config_dict[opt.config]
+config = MyConfig.MyConfig(path=config_path)
+config.set_subkey('learning', 'epochs', opt.epochs)
+def ordinary_train(model_type):
+    if 'cifar' in config_path:
+        data_loader, data_size = cifar_dataloader(config=config, is_target=True)
+    else:
+        data_loader, data_size = ImageNet_loader(config=config, is_target=True)
+    train_VIT(model_type, data_loader, data_size, config)
+    if 'cifar' in config_path:
+        data_loader, data_size = cifar_dataloader(config=config, is_target=False)
+    else:
+        data_loader, data_size = ImageNet_loader(config=config, is_target=False)
+    train_VIT(model_type, data_loader, data_size, config)
 
-data_loader, data_size = model_dataloader(root_dir=root_dir)
-# train_VIT('mask_plus', data_loader, data_size, config, PE=True)
-# mask_train_model('mask_plus_avg', config, data_loader, data_size, if_mixup=False, PEratio=0.5)
+def mask_train(model_type):
+    if 'cifar' in config_path:
+        data_loader, data_size = cifar_dataloader(config=config, is_target=True)
+    else:
+        data_loader, data_size = ImageNet_loader(config=config, is_target=True)
+
+    mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
+
+    if 'cifar' in config_path:
+        data_loader, data_size = cifar_dataloader(config=config, is_target=False)
+    else:
+        data_loader, data_size = ImageNet_loader(config=config, is_target=False)
+
+    mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
+
+
+if opt.ordinary_train:
+    ordinary_train(opt.model_type)
+else:
+    mask_train(opt.model_type)
+
+
+
+
+
+
+
 # loader = {'train': data_loader['val'], 'val': data_loader['train']}
 # size = {'train': data_size['val'], 'val': data_size['train']}
 # train_VIT('ape_shadow', loader, size, config, PE=True)
-# mask_train_model('mask_plus_avg_shadow', config, loader, size, if_mixup=False, PEratio=0.5)
-predict_cmp(data_loader['val'], data_size['val'], model_dir)
+# mask_train_model('mask_avg_fill_shadow', config, loader, size, if_mixup=False, PEratio=0.5, mt='pub_fill')
+# predict_cmp(data_loader['val'], data_size['val'], model_dir)
 
 #训练一个shadow model，它的训练集是原始target model的验证集
 # if opt.val == 'all':

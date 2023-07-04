@@ -4,7 +4,7 @@ __version__ = "1.0.5"
 import os
 import yaml
 
-__all__ = ["config"]
+# __all__ = ["config"]
 
 
 def update_config(conf, new_conf):
@@ -24,7 +24,7 @@ def load_yaml(file):
     return conf_dict
 
 
-class Config:
+class MyConfig:
     def __init__(self, path="config/", cfg=None):
         self.__is_none = False
         self.__data = cfg if cfg is not None else {}
@@ -53,7 +53,7 @@ class Config:
 
     def __getattr__(self, item):
         if type(self.__data[item]) == dict:
-            return Config(cfg=self.__data[item])
+            return MyConfig(cfg=self.__data[item])
         return self.__data[item]
 
     def __getitem__(self, item):
@@ -69,4 +69,4 @@ class Singleton:
             self.instance = self.cls(*args, **kwargs)
             return self.instance
 
-config = Singleton(Config)
+config = Singleton(MyConfig)

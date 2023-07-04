@@ -2,13 +2,13 @@ import argparse
 
 import numpy as np
 
-from mymodel import ViT,ViT_mask,ViT_mask_plus,ViT_mask_avg
-from dataloader import model_dataloader, VITdataset, imgshuffle
+from mymodel import ViT,ViT_mask,ViT_mask_avg
+from dataloader import VITdataset, imgshuffle, cifar_dataloader
 from masking_generator import JigsawPuzzleMaskedRegion
 from trainer import mask_train_model, train_VIT, predict
 import torch
 import torch.nn.functional as F
-from utils import config
+from utils import MyConfig
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 #预测对比
@@ -21,10 +21,10 @@ def predict_cmp(loader, size, model_dir):
     for type in ['mask_0.5', 'mask_plus', 'mask_avg']:
         if type == 'mask_0.5':
             model = ViT_mask.load_VIT(model_dir+ type+'.pth').to(device)
-        elif type == 'mask_plus':
-            model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
-            pe_mean = model.pos_embedding.data[:17, ].mean(0)
-            model.pos_embedding.data = (1 - alpha) * model.pos_embedding.data + alpha * pe_mean
+        # elif type == 'mask_plus':
+        #     model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
+        #     pe_mean = model.pos_embedding.data[:17, ].mean(0)
+        #     model.pos_embedding.data = (1 - alpha) * model.pos_embedding.data + alpha * pe_mean
         else:
             model = ViT_mask_avg.load_VIT(model_dir+ type+'.pth').to(device)
             pe_mean = model.pos_embedding.data[:17, ].mean(0)
@@ -46,8 +46,8 @@ def test_mask_model(config, loader, size, model_dir):
     for type in ['mask_0.5', 'mask_plus', 'mask_avg']:
         if type == 'mask_0.5':
             model = ViT_mask.load_VIT(model_dir+ type+'.pth').to(device)
-        elif type == 'mask_plus':
-            model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
+        # elif type == 'mask_plus':
+        #     model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
         else:
             model = ViT_mask_avg.load_VIT(model_dir+ type+'.pth').to(device)
         acc = predict(model, loader, size, jigsaw_pullzer)
@@ -65,7 +65,7 @@ def test_mask_model_imgshuff(config, root_dir, model_dir, val='all'):
         loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False, collate_fn=imgshf)
         size = len(dataset)
     else:
-        loader, size = model_dataloader(root_dir=root_dir, c_fn=imgshf)
+        loader, size = cifar_dataloader(root_dir=root_dir, c_fn=imgshf)
         loader, size = loader['val'], size['val']
     model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth').to(device)
     acc1 = predict(model, loader, size)
@@ -75,10 +75,10 @@ def test_mask_model_imgshuff(config, root_dir, model_dir, val='all'):
             model = ViT_mask.load_VIT(model_dir+ type+'.pth').to(device)
             # pe_mean = model.pos_embedding.data[:17, ].mean(0)
             # model.pos_embedding.data = (1 - alpha) * model.pos_embedding.data + alpha * pe_mean
-        elif type == 'mask_plus':
-            model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
-            pe_mean = model.pos_embedding.data[:17, ].mean(0)
-            model.pos_embedding.data = (1 - alpha) * model.pos_embedding.data + alpha * pe_mean
+        # elif type == 'mask_plus':
+        #     model = ViT_mask_plus.load_VIT(model_dir+ type+'.pth').to(device)
+        #     pe_mean = model.pos_embedding.data[:17, ].mean(0)
+        #     model.pos_embedding.data = (1 - alpha) * model.pos_embedding.data + alpha * pe_mean
         else:
             model = ViT_mask_avg.load_VIT(model_dir+ type+'.pth').to(device)
             pe_mean = model.pos_embedding.data[:17, ].mean(0)
@@ -90,7 +90,7 @@ def test_mask_model_imgshuff(config, root_dir, model_dir, val='all'):
 # 评估模型位置编码的隐私泄露问题，使用
 def Privacy_laekage(config, loader, size):
     model1 = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth').to(device)
-    model2 = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth').to(device)
+    model2 = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth').to(device)
     jigsaw = JigsawPuzzleMaskedRegion(img_size=config.patch.img_size,
                                               patch_size=config.patch.patch_size
                                               )
@@ -116,7 +116,7 @@ def pe_mix_up(loader, size, model_dir):
     model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth').to(device)
     acc1 = predict(model, loader, size)
     print("model acc(unmask):{:.3f}".format(acc1))
-    model = ViT_mask_plus.load_VIT(model_dir+'mask_plus.pth').to(device)
+    model = ViT_mask.load_VIT(model_dir+'mask_plus.pth').to(device)
 
     acc = predict(model, loader, size)
     print("model acc({}):{:.3f}".format(type,acc))

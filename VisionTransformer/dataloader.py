@@ -1,13 +1,8 @@
-# -*- coding: utf-8 -*-
-# @File : dataloader.py
-# @Author: Runist
-# @Time : 2021/10/28 10:26
-# @Software: PyCharm
-# @Brief:
 import copy
 from random import random
 
-from torch.utils.data import Dataset
+import cv2
+from torch.utils.data import Dataset,Subset,ConcatDataset
 from torchvision import transforms, datasets
 import os
 import glob
@@ -18,19 +13,14 @@ from PIL import Image
 
 class VITdataset(Dataset):
 
-    def __init__(self, root_dir, spilt='nothing'):
-        self.root_dir = root_dir
-        self.Transform = transforms.Compose([
-                transforms.Resize([32,32]),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-            ])
-
+    def __init__(self, root_dir, spilt='nothing', random_seed = 1001):
+        self.Transform = transforms.Compose([transforms.Resize([32, 32]),
+                                         transforms.ToTensor(),
+                                         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         # Output of pretransform should be PIL images
         self.data_dir = root_dir
         self.dataset = datasets.ImageFolder(self.data_dir+'train', self.Transform) + datasets.ImageFolder(self.data_dir+'val', self.Transform)
-        train_set, val_set = dataset_split(self.dataset)
+        train_set, val_set = dataset_split(self.dataset,random_seed)
         if spilt == 'train':
             self.dataset = train_set
         elif spilt == 'val':
@@ -48,40 +38,37 @@ class VITdataset(Dataset):
 
 
 
-data_transform = {
-    "train": transforms.Compose([transforms.RandomResizedCrop(224),
-                                 transforms.RandomHorizontalFlip(),
-                                 transforms.ToTensor(),
-                                 transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]),
-    "val": transforms.Compose([transforms.Resize(256),
-                               transforms.CenterCrop(224),
-                               transforms.ToTensor(),
-                               transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])])}
+# data_transform = {
+#     "train": transforms.Compose([transforms.RandomResizedCrop(224),
+#                                  transforms.RandomHorizontalFlip(),
+#                                  transforms.ToTensor(),
+#                                  transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])]),
+#     "val": transforms.Compose([transforms.Resize(256),
+#                                transforms.CenterCrop(224),
+#                                transforms.ToTensor(),
+#                                transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])])}
 
 
 
-def model_dataloader(root_dir, c_fn=None):
-    train_set = VITdataset(root_dir=root_dir, spilt='train')
-    val_set = VITdataset(root_dir=root_dir, spilt='val')
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=64, shuffle=True, collate_fn=c_fn)
-    val_loader = torch.utils.data.DataLoader(val_set, batch_size=64, shuffle=False, collate_fn=c_fn)
+def cifar_dataloader(config, c_fn=None, is_target=True):
+    seed = config.general.seed_target if is_target else config.general.seed_shadow
+    train_set = VITdataset(root_dir=config.path.data_path, spilt='train', random_seed = seed)
+    val_set = VITdataset(root_dir=config.path.data_path, spilt='val', random_seed = seed)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, collate_fn=c_fn)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False, collate_fn=c_fn)
     data_loader = {'train': train_loader, 'val': val_loader}
     data_size = {"train": len(train_set), "val": len(val_set)}
     return data_loader, data_size
 
 
-def dataset_split(data):
-    np.random.seed(101)
+def dataset_split(data, random_seed):
+    np.random.seed(random_seed)
     idx =list(range(len(data)))
     np.random.shuffle(idx)
-    train_set = torch.utils.data.Subset(data, idx[0:int(len(idx)/2)])
-    val_set = torch.utils.data.Subset(data, idx[int(len(idx)/2):])
+    train_set = torch.utils.data.Subset(data, idx[0:int(2*len(idx)/3)])
+    val_set = torch.utils.data.Subset(data, idx[int(2*len(idx)/3):])
     return train_set, val_set
 
-def para_dataloader(root_dir):
-    dataset = VITdataset(root_dir=root_dir)
-    train_loader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=True)
-    return train_loader, len(dataset)
 
 class imgshuffle():
     def __init__(self, patch_ratio, pixel_ratio, shf_dim = -1, seed=101, img_size = 32, patch_size = 8):
@@ -98,7 +85,6 @@ class imgshuffle():
             kernel_size=(patch_size, patch_size),
             stride=patch_size
         )
-
 
     def __call__(self, data):
         # data = data.transpose(1,0)
@@ -123,8 +109,110 @@ class imgshuffle():
             to_images = self.patches_to_im(to_patches)
         else:
             to_images = imgs
-        return (to_images,labels)
+        return to_images,labels
+
+
+# class pub_data():
+#     def __init__(self, root_dir, img_size=224, patch_size=16):
+#         self.root_dir = root_dir
+#         self.Transform = transforms.Compose([
+#                 transforms.Resize([img_size,img_size]),
+#                 transforms.RandomHorizontalFlip(),
+#                 transforms.ToTensor(),
+#                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+#             ])
+#         self.dataset = datasets.ImageFolder(self.root_dir+'train', self.Transform) + datasets.ImageFolder(self.root_dir+'val', self.Transform)
+#         self.im_to_patches = torch.nn.Unfold((patch_size, patch_size), stride=patch_size)
+#         self.idx = list(range(len(self.dataset)))
+#
+#
+#     def __call__(self, length = 100, random_seed = 101):
+#         np.random.seed(random_seed)
+#         choice_idx = np.random.choice(self.idx, size=length, replace=False)
+#         subset = torch.utils.data.Subset(self.dataset, choice_idx)
+#         subdata = []
+#         for i in range(len(subset)):
+#             subdata.append(subset[i][0])
+#         data = torch.stack(subdata,dim=0)
+#         data = self.im_to_patches(data)
+#         return data
+
+def public_data(root_dir, img_size=224, patch_size=16, length = 100, random_seed = 101):
+    np.random.seed(random_seed)
+    im_to_patches = torch.nn.Unfold((patch_size, patch_size), stride=patch_size)
+    Transform = transforms.Compose([
+        transforms.Resize([img_size, img_size]),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+    ])
+    files = os.listdir(root_dir)
+    idx = np.random.choice(np.arange(len(files)), size=length, replace=False)
+    data_list = []
+    for i in range(length):
+        img = Image.open(root_dir+files[idx[i]])
+        data_list.append(Transform(img))
+    data = im_to_patches(torch.stack(data_list, dim=0))
+    return data
 
 
 
+class imageNet100(Dataset):
 
+    def __init__(self, root_dir, spilt='nothing', num_class=100, nums_per_class=1000, is_target = True, seed = 101):
+        # Output of pretransform should be PIL images
+        self.Transform = transforms.Compose([transforms.Resize([224,224]),
+                                             transforms.ToTensor(),
+                                             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        self.root_dir = root_dir
+        if spilt == 'train':
+            self.dataset = datasets.ImageFolder(self.root_dir+'train', self.Transform)
+            self.dataset = train_data_spilt(self.dataset, num_class, nums_per_class, is_target, seed)
+        elif spilt == 'val':
+            self.dataset = datasets.ImageFolder(self.root_dir+'val', self.Transform)
+        elif spilt == 'test':
+            self.dataset = datasets.ImageFolder(self.root_dir+'test', self.Transform)
+        else:
+            self.dataset = datasets.ImageFolder(self.root_dir+'val', self.Transform) + datasets.ImageFolder(self.root_dir+'test', self.Transform)
+
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        # if self.shuffle:
+        #     return imgshuffle(self.dataset[idx][0].unsqueeze(0),alpha=0.2), self.dataset[idx][1]
+        # else:
+        return self.dataset[idx][0], self.dataset[idx][1]
+
+
+def train_data_spilt(dataset, num_class, nums_per_class, is_target=True, seed=101):
+    np.random.seed(seed)
+    idx = list(range(nums_per_class))
+    np.random.shuffle(idx)
+    idx = np.array(idx)[:int(nums_per_class/2)] if is_target else np.array(idx)[int(nums_per_class/2):]
+    index = []
+    for i in range(num_class):
+        index += idx.tolist()
+        idx += nums_per_class
+    train_set = Subset(dataset, index)
+    return train_set
+
+
+def ImageNet_loader(config, is_target=True):
+    train_set = imageNet100(root_dir=config.path.data_path, spilt='train', is_target=is_target, seed=config.general.train_spilt_seed)
+    val_set = imageNet100(root_dir=config.path.data_path, spilt='val')
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False)
+    data_loader = {'train': train_loader, 'val': val_loader}
+    data_size = {"train": len(train_set), "val": len(val_set)}
+    return data_loader, data_size
+
+
+def ImageNet_MIA_loader(root_dir, config, is_target=True):
+    train_set = imageNet100(root_dir=root_dir, spilt='train', is_target=is_target)
+    nontrain_set = imageNet100(root_dir=root_dir, spilt='val+test')
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True)
+    nontrain_loader = torch.utils.data.DataLoader(nontrain_set, batch_size=config.learning.batch_size, shuffle=False)
+    data_loader = {'train': train_loader, 'val': nontrain_loader}
+    data_size = {"train": len(train_set), "val": len(nontrain_set)}
+    return data_loader, data_size

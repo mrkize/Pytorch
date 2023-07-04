@@ -92,6 +92,7 @@ def parse_option():
         "Place100": 2,
         "Place50": 2,
         "Place20": 2,
+        "ImageNei100": 100
     }
     opt.n_class = dataset_class_dict[opt.dataset]
     # opt.encoder_dim = model_encoder_dim_dict[opt.model]
@@ -149,8 +150,14 @@ elif opt.model == 'VIT_ape':
 elif opt.model == 'VIT_mask_avg':
     target_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg.pth')
     shadow_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_shadow.pth')
+elif opt.model == 'VIT_mask_avg_fill':
+    target_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_fill.pth')
+    shadow_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_fill_shadow.pth')
+elif opt.model == 'VIT_mask_plus_fill':
+    target_combine_model = ViT_mask_plus.load_VIT('./saved_model/VIT_Model_cifar10/VIT_mask_plus_fill.pth')
+    shadow_combine_model = ViT_mask_plus.load_VIT('./saved_model/VIT_Model_cifar10/VIT_mask_plus_fill_shadow.pth')
 else:
-    alpha = 0.2
+    alpha = 0.5
     target_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth')
     shadow_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus_shadow.pth')
     target_pe_mean = target_combine_model.pos_embedding.data[:17,].mean(0)

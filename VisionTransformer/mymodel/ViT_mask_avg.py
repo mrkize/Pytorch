@@ -122,7 +122,7 @@ class Transformer(nn.Module):
 
 
 class VIT(nn.Module):
-    def __init__(self, *, image_size, patch_size, dim, num_classes, depth, heads, mlp_dim, pool='cls', channels=3, dim_head=8, dropout=0., emb_dropout=0.,PEratio=0.5):
+    def __init__(self, image_size, patch_size, embed_dim, num_classes, depth, heads, mlp_dim, pool='cls', channels=3, dim_head=8, dropout=0., emb_dropout=0.):
         super().__init__()
         image_height, image_width = pair(image_size)
         patch_height, patch_width = pair(patch_size)
@@ -130,26 +130,23 @@ class VIT(nn.Module):
         assert  image_height % patch_height ==0 and image_width % patch_width == 0
 
         num_patches = (image_height // patch_height) * (image_width // patch_width)
-        patch_dim = channels * patch_height * patch_width
         assert pool in {'cls', 'mean'}
 
-        self.epoch_threshold = 30
-        self.pe_train_nums = int(PEratio*num_patches)
-        self.to_patch_embedding = PatchEmbed(image_size=image_size, patch_size=patch_size, embed_dim=patch_dim)
+        self.to_patch_embedding = PatchEmbed(image_size=image_size, patch_size=patch_size, embed_dim=embed_dim)
         self.unk_embed_index = num_patches + 1
         self.PE = True
-        self.pos_embedding= nn.Parameter(torch.randn(num_patches+1, patch_dim))
-        self.cls_token = nn.Parameter(torch.randn(1, 1, patch_dim))					# nn.Parameter()定义可学习参数
+        self.pos_embedding = nn.Parameter(torch.randn(num_patches+1, embed_dim))
+        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))					# nn.Parameter()定义可学习参数
         self.dropout = nn.Dropout(emb_dropout)
 
-        self.transformer = Transformer(patch_dim, depth, heads, dim_head, mlp_dim, dropout)
+        self.transformer = Transformer(embed_dim, depth, heads, dim_head, mlp_dim, dropout)
 
         self.pool = pool
         self.to_latent = nn.Identity()
 
         self.mlp_head = nn.Sequential(
-            nn.LayerNorm(patch_dim),
-            nn.Linear(patch_dim, num_classes)
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, num_classes)
         )
 
     def forward(self, x, unk_mask = None):
@@ -196,33 +193,60 @@ class parameter(nn.Module):
         return x + self.para
 
 
-def creat_VIT(PEratio = 0.5):
+def creat_VIT(config):
     model_vit = VIT(
-        image_size=32,
-        patch_size=8,
-        num_classes=10,
-        dim=192,
-        depth=4,
-        heads=8,
-        mlp_dim=512,
-        dropout=0.1,
-        emb_dropout=0.1,
-        PEratio=PEratio
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
     )
     return model_vit
 
-def load_VIT(model_path):
+def load_VIT(model_path, config):
     model_vit = VIT(
-        image_size=32,
-        patch_size=8,
-        num_classes=10,
-        dim=192,
-        depth=4,
-        heads=8,
-        mlp_dim=512,
-        dropout=0.1,
-        emb_dropout=0.1
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
     )
+    model_vit.load_state_dict(torch.load(model_path))
+    return model_vit
 
+def creat_VIT_T(config):
+    model_vit = VIT(
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
+    )
+    return model_vit
+
+def load_VIT_T(model_path, config):
+    model_vit = VIT(
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
+    )
     model_vit.load_state_dict(torch.load(model_path))
     return model_vit
