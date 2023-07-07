@@ -5,6 +5,7 @@ A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shi
 Code/weights from https://github.com/microsoft/Swin-Transformer
 
 """
+import math
 
 import torch
 import torch.nn as nn
@@ -35,6 +36,27 @@ def drop_path_f(x, drop_prob: float = 0., training: bool = False):
     output = x.div(keep_prob) * random_tensor
     return output
 
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(
+            0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        """
+        x: [seq_len, batch_size, d_model]
+        """
+        x = x + self.pe[0,:x.size(1), :]
+        return self.dropout(x)
 
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
@@ -92,8 +114,8 @@ class PatchEmbed(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=4, in_c=3, embed_dim=96, norm_layer=None):
         super().__init__()
-        img_size = [img_size, img_size]
-        patch_size = [patch_size, patch_size]
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
         patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
         self.patch_size = patch_size
         self.in_chans = in_c
@@ -495,7 +517,7 @@ class SwinTransformer(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, patch_size=4, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=224,patch_size=4, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=(2, 2, 6, 2), num_heads=(3, 6, 12, 24),
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -512,17 +534,18 @@ class SwinTransformer(nn.Module):
         self.mlp_ratio = mlp_ratio
 
         # split image into non-overlapping patches
-        self.patch_embed = PatchEmbed(
+        self.patch_embed = PatchEmbed(img_size=img_size,
             patch_size=patch_size, in_c=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         num_patches = self.patch_embed.num_patches
         # absolute position embedding
-        self.pos_embedding = nn.Parameter(torch.zeros(num_patches+1, embed_dim))
-        trunc_normal_(self.pos_embedding, std=.02)
-        self.unk_embed_index = num_patches
         self.PE = True
+        self.pos_embedding = PositionalEncoding(embed_dim)
+        # trunc_normal_(self.pos_embedding, std=.02)
+
+
 
 
 
@@ -564,15 +587,11 @@ class SwinTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x, unk_mask=None):
+    def forward(self, x):
         # x: [B, L, C]
         x, H, W = self.patch_embed(x)
-        seq_ord = torch.arange(x.size(1)).unsqueeze(0).to(x.device)
-        if unk_mask is not None:
-            seq_ord = seq_ord * (1 - unk_mask) + unk_mask * self.unk_embed_index
-        pos_embedding = self.pos_embedding[seq_ord]
         if self.PE:
-            x = x + pos_embedding
+            x = self.pos_embedding(x)
         x = self.pos_drop(x)
 
         for layer in self.layers:
@@ -586,26 +605,32 @@ class SwinTransformer(nn.Module):
 
 def creat_Swin(config):
 
-    model_Swin = SwinTransformer(in_chans=3,
-                                patch_size=4,
-                                window_size=7,
-                                embed_dim=96,
+    model_Swin = SwinTransformer(img_size=config.patch.image_size,
+                                in_chans=3,
+                                patch_size=config.patch.patch_size,
+                                window_size=config.patch.window_size,
+                                embed_dim=config.patch.embed_dim,
                                 depths=(2, 2, 6, 2),
                                 num_heads=(3, 6, 12, 24),
-                                num_classes=config.patch.num_classes)
+                                num_classes=config.patch.num_classes,
+                                drop_rate=config.patch.drop_rate)
     return model_Swin
 
 def load_Swin(model_path, config):
 
-    model_Swin = SwinTransformer(in_chans=3,
-                                patch_size=4,
-                                window_size=7,
-                                embed_dim=96,
+    model_Swin = SwinTransformer(img_size=config.patch.image_size,
+                                in_chans=3,
+                                patch_size=config.patch.patch_size,
+                                window_size=config.patch.window_size,
+                                embed_dim=config.patch.embed_dim,
                                 depths=(2, 2, 6, 2),
                                 num_heads=(3, 6, 12, 24),
-                                num_classes=config.patch.num_classes)
+                                num_classes=config.patch.num_classes,
+                                drop_rate=config.patch.drop_rate)
     model_Swin.load_state_dict(torch.load(model_path))
     return model_Swin
+
+
 
 
 def swin_tiny_patch4_window7_224(num_classes: int = 1000, **kwargs):

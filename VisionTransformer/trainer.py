@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
+import warmup_scheduler
 from timm.data import Mixup
 from timm.loss import SoftTargetCrossEntropy
 from torch.optim import lr_scheduler
@@ -12,7 +13,7 @@ from mymodel import ViT, ViT_mask, ViT_ape, ViT_mask_avg, Swin, Swin_mask_avg, S
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_sizes,config):
+def train_model(model, criterion_hard, optimizer, scheduler, dataloaders, dataset_sizes, mixup_fn, criterion_mixup,config):
     print("DATASET SIZE", dataset_sizes)
     since = time.time()
     #save the best model
@@ -44,6 +45,12 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
                 optimizer.zero_grad()
                 # forward
                 # track history if only in train
+                criterion = criterion_hard
+                if phase == 'train':
+                    if mixup_fn is not None:
+                        inputs, labels = mixup_fn(inputs, labels)
+                        criterion = criterion_mixup
+
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
                     _, preds = torch.max(outputs, 1)
@@ -55,7 +62,7 @@ def train_model(model, criterion, optimizer, scheduler, dataloaders, dataset_siz
                         optimizer.step()
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
-                running_corrects += preds.eq(labels).sum().item()
+                running_corrects += preds.eq(target.to(device)).sum().item()
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = 1.0 * running_corrects / dataset_sizes[phase]
             if phase == 'train':
@@ -103,27 +110,51 @@ def predict(model, dataloaders, dataset_sizes, jigsaw=None):
     return acc
 
 
-def train_VIT(model_type, data_loader, data_size, config):
+def train_VIT(model_type, data_loader, data_size, if_mixup, config):
     config.set_subkey('general', 'type', model_type)
     if 'Swin' in model_type:
         if 'ape' in model_type:
             model_vit = Swin.creat_Swin(config).to(device)
         else:
+            # model_vit = Swin.load_Swin('./Network/VIT_Model_cifar10/Swin.pth', config).to(device)
             model_vit = Swin.creat_Swin(config).to(device)
     else:
         if 'ape' in model_type:
             model_vit = ViT_ape.creat_VIT(config).to(device)
         else:
             model_vit = ViT.creat_VIT(config).to(device)
+    criterion_mixup = None
+    mixup_fn = None
+    if if_mixup:
+        mixup_fn = Mixup(
+            mixup_alpha=config.general.mixup_alpha,
+            # cutmix_alpha=config.general.cutmix_alpha,
+            num_classes=config.patch.num_classes)
+        criterion_mixup = SoftTargetCrossEntropy()
     # model_vit = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth').to(device)
     # model_vit.PE = False
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(model_vit.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
-    # optimizer = optim.Adam(model.parameters(), lr=config.learning.learning_rate, weight_decay=0.01)
+    optimizer = torch.optim.Adam(model_vit.parameters(),
+                                      lr=config.learning.learning_rate,
+                                      betas=(config.learning.beta1, config.learning.beta2),
+                                      weight_decay=config.learning.weight_decay
+                                 )
+    # optimizer = optim.SGD(model_vit.parameters(),
+    #                       lr=config.learning.learning_rate,
+    #                       momentum=config.learning.momentum,
+    #                       # weight_decay=config.learning.weight_decay
+    #                       )
+
     # learning rate adopt
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
+    base_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                                T_max=config.learning.epochs,
+                                                                eta_min=config.learning.min_lr)
+    exp_lr_scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1.,
+                                                        total_epoch=config.learning.warmup_epoch,
+                                                        after_scheduler=base_scheduler)
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
     # training target model
-    model, ret_para, best_acc = train_model(model_vit, criterion, optimizer, exp_lr_scheduler,data_loader,data_size, config)
+    model, ret_para, best_acc = train_model(model_vit, criterion, optimizer, exp_lr_scheduler,data_loader,data_size, mixup_fn, criterion_mixup, config)
     torch.save(model.state_dict(), config.path.model_path+model_type+'.pth')
     np.save(config.path.result_path+model_type+'.npy', ret_para)
     # if not os.path.exists(config.path.model_path + 'VIT_Model/'):
@@ -137,7 +168,7 @@ def train_VIT(model_type, data_loader, data_size, config):
     return model, ret_para
 
 
-def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, jigsaw_pullzer, config):
+def mask_train(model, loader, size, criterion_hard, scheduler, optimizer, mixup_fn, criterion_mixup, jigsaw_pullzer, config):
     print("DATASET SIZE", size)
     since = time.time()
     #save the best model
@@ -162,15 +193,17 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
             # Iterate over data.
             for batch_idx, (data, target) in enumerate(loader[phase]):
                 inputs, labels = data.to(device), target.to(device)
-                if mixup_fn is not None:
-                    inputs, labels = mixup_fn(inputs, labels)
+                criterion = criterion_hard
 
                 unk_mask = None
-                if phase == 'train:':
+                if phase == 'train':
+                    if mixup_fn is not None:
+                        inputs, labels = mixup_fn(inputs, labels)
+                        criterion = criterion_mixup
+
                     if epoch >= config.mask.warmup_epoch and torch.rand(1) > config.mask.jigsaw:
                         inputs, unk_mask = jigsaw_pullzer(inputs)
                         unk_mask = torch.from_numpy(unk_mask).long().to(device)
-
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
@@ -200,8 +233,8 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
                 print('val acc:{:.3f}'.format(epoch_acc))
                 ret_value[2][epoch] = epoch_loss
                 ret_value[3][epoch] = epoch_acc
-        # if (epoch+1)%10 ==0:
-        #     torch.save(model.state_dict(), config.path.model_path + config.general.type + str(mask_ratio)   + '.pth')
+        # if epoch+1 ==config.mask.warmup_epoch:
+        #     torch.save(model.state_dict(), config.path.model_path + config.general.type + '_' + str(config.mask.mask_ratio)   + '.pth')
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
@@ -211,8 +244,9 @@ def mask_train(model, loader, size, criterion, scheduler, optimizer, mixup_fn, j
     # model.load_state_dict(best_model_wts)
     return model, ret_value
 
-def mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, mask_ratio=0.5, mt='mjp'):
+def mask_train_model(model_type, config, data_loader, data_size, mask_ratio=0.2, if_mixup=False, mt='mjp'):
     config.set_subkey('general', 'type', model_type)
+    config.set_subkey('mask', 'mask_ratio', mask_ratio)
     if 'Swin' in model_type:
         if 'avg' in model_type:
             model = Swin_mask_avg.creat_Swin(config).to(device)
@@ -222,26 +256,47 @@ def mask_train_model(model_type, config, data_loader, data_size, if_mixup=False,
         if 'avg' in model_type:
             model = ViT_mask_avg.creat_VIT(config).to(device)
         else:
-            model = ViT_mask.creat_VIT().to(device)
+            model = ViT_mask.creat_VIT(config).to(device)
     mixup_fn = None
+    criterion_mixup = None
     if if_mixup:
         mixup_fn = Mixup(
-            mixup_alpha=0.8,num_classes=10)
-        criterion = SoftTargetCrossEntropy()
-    else:
-        criterion = nn.CrossEntropyLoss()
+            mixup_alpha=config.general.mixup_alpha,
+            # cutmix_alpha=config.general.cutmix_alpha,
+            num_classes=config.patch.num_classes)
+        criterion_mixup = SoftTargetCrossEntropy()
+
+    criterion = nn.CrossEntropyLoss()
 
 
     jigsaw_pullzer = JigsawPuzzleMaskedRegion(img_size=config.patch.image_size,
                                               patch_size=config.patch.patch_size,
                                               num_masking_patches=int(mask_ratio*config.patch.num_patches),
                                               min_num_patches=config.mask.min_num_patches,
-                                              mask_type = mt)
-    optimizer = optim.SGD(model.parameters(), lr=config.learning.learning_rate, momentum=config.learning.momentum)
-    # optimizer = optim.Adam(model.parameters(), lr=config.learning.learning_rate, weight_decay=0.01)
+                                              mask_type = mt,
+                                              pub_data_dir =config.path.public_path)
+    optimizer = torch.optim.Adam(model.parameters(),
+                                      lr=config.learning.learning_rate,
+                                      betas=(config.learning.beta1, config.learning.beta2),
+                                      weight_decay=config.learning.weight_decay
+                                 )
+
     # learning rate adopt
-    exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
-    model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, jigsaw_pullzer, config)
-    torch.save(model.state_dict(), config.path.model_path + model_type + str(mask_ratio) + '.pth')
-    np.save(config.path.model_path +model_type + str(mask_ratio)  + '.pth', ret)
+    base_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                                T_max=config.learning.epochs,
+                                                                eta_min=config.learning.min_lr)
+    exp_lr_scheduler = warmup_scheduler.GradualWarmupScheduler(optimizer, multiplier=1.,
+                                                        total_epoch=config.learning.warmup_epoch,
+                                                        after_scheduler=base_scheduler)
+
+    # optimizer = optim.SGD(model.parameters(),
+    #                       lr=config.learning.learning_rate,
+    #                       momentum=config.learning.momentum,
+    #                       # weight_decay=config.learning.weight_decay
+    #                       )
+    # # learning rate adopt
+    # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
+    model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, criterion_mixup, jigsaw_pullzer, config)
+    torch.save(model.state_dict(), config.path.model_path + model_type +'_'+ str(mask_ratio) + '.pth')
+    np.save(config.path.result_path +model_type +'_'+ str(mask_ratio)  + '.pth', ret)
     return

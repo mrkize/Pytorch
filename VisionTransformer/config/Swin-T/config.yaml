@@ -2,6 +2,7 @@ path:
   data_path: '../data/ImageNet100/'
   result_path: results/VIT_Model_imagenet100/
   model_path: Network/VIT_Model_imagenet100/
+  public_path: '../data/ImageNet100/public/'
 
 patch:
   image_size: 224

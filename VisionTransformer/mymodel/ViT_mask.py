@@ -160,7 +160,8 @@ class VIT(nn.Module):
         if unk_mask is not None:
             seq_ord = seq_ord * (1 - unk_mask) + unk_mask * self.unk_embed_index
         pos_embedding = self.pos_embedding(seq_ord)
-        x += pos_embedding
+        if self.PE:
+            x += pos_embedding
         x = self.dropout(x)
 
         x = self.transformer(x)                                                 # (b, 65, dim)
@@ -182,32 +183,31 @@ class parameter(nn.Module):
         return x + self.para
 
 
-def creat_VIT():
+def creat_VIT(config):
     model_vit = VIT(
-        image_size=32,
-        patch_size=8,
-        num_classes=10,
-        embed_dim=192,
-        depth=4,
-        heads=8,
-        mlp_dim=512,
-        dropout=0.1,
-        emb_dropout=0.1,
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
     )
     return model_vit
 
-def load_VIT(model_path):
+def load_VIT(model_path, config):
     model_vit = VIT(
-        image_size=32,
-        patch_size=8,
-        num_classes=10,
-        embed_dim=192,
-        depth=4,
-        heads=8,
-        mlp_dim=512,
-        dropout=0.1,
-        emb_dropout=0.1
+        image_size=config.patch.image_size,
+        patch_size=config.patch.patch_size,
+        num_classes=config.patch.num_classes,
+        embed_dim=config.patch.embed_dim,
+        depth=config.patch.depth,
+        heads=config.patch.heads,
+        mlp_dim=config.patch.mlp_dim,
+        dropout=config.patch.dropout,
+        emb_dropout=config.patch.emb_dropout,
     )
-
     model_vit.load_state_dict(torch.load(model_path))
     return model_vit

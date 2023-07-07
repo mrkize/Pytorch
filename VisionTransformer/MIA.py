@@ -1,13 +1,15 @@
 import datetime
 import shfattacktrain
 import torch
+
+from utils import MyConfig
 from atk_models.resnet_simclr import ResNetSimCLR, LinearClassifier
 from atk_models.attack_model import MLP_CE
 from utils.mia.attackTraining import attackTraining
 from utils.mia.metric_based_attack import AttackTrainingMetric
 from utils.mia.label_only_attack import AttackLabelOnly
-from mymodel import ViT,ViT_mask,ViT_mask_plus,ViT_ape,ViT_mask_avg
-from dataloader import model_dataloader, imgshuffle
+from mymodel import ViT,ViT_mask,ViT_ape,ViT_mask_avg,Swin,Swin_mask, Swin_mask_avg,Swin_ape
+from dataloader import imgshuffle, cifar_dataloader
 
 import numpy as np
 import os
@@ -22,7 +24,7 @@ np.random.seed(0)
 def parse_option():
 
     parser = argparse.ArgumentParser('argument for training')
-    parser.add_argument('--no_PE', action = "store_true",
+    parser.add_argument('--maskPE', action = "store_true",
                         help='whether use PE')
     parser.add_argument('--batch_size', type=int, default=512,
                         help='batch_size')
@@ -41,8 +43,8 @@ def parse_option():
                         help='learning rate')
 
     # model dataset
-    parser.add_argument('--model', type=str, default='VIT_mask_plus')
-    parser.add_argument('--dataset', type=str, default='CIFAR10',
+    parser.add_argument('--model', type=str, default='ViT_mask_avg_0.5')
+    parser.add_argument('--dataset', type=str, default='cifar10',
                         help='dataset')
     parser.add_argument('--data_path', type=str, default='data/',
                         help='data_path')
@@ -61,8 +63,10 @@ def parse_option():
     # label
     parser.add_argument('--original_label', type=str, default='Gender')
     parser.add_argument("--aux_label", type=str, default='Race')
-    parser.add_argument('--single_label_dataset', type=list, default=["CIFAR10", "CIFAR100", "STL10"],
+    parser.add_argument('--single_label_dataset', type=list, default=["cifar10", "cifar100", "STL10"],
                         help="single_label_dataset")
+    parser.add_argument('--multi_label_dataset', type=list, default=["UTKFace", "CelebA", "Place365", "Place100", "Place50", "Place20"],
+                        help="multi_label_dataset")
     parser.add_argument('--mia_type', type=str, default="nn-based",
                         help="nn-based, lebel-only, metric-based")
     parser.add_argument('--select_posteriors', type=int, default=-1,
@@ -84,8 +88,8 @@ def parse_option():
     # }
     dataset_class_dict = {
         "STL10": 10,
-        "CIFAR10": 10,
-        "CIFAR100": 100,
+        "cifar10": 10,
+        "cifar100": 100,
         "UTKFace": 2,
         "CelebA": 2,
         "Place365": 2,
@@ -120,61 +124,81 @@ def write_time(wf):
 
 def write_config(wf, opt):
     line = "%s, %s, use_PE: %s, shf_dim: %d, ptr: %f, pxr: %f\n" % (
-        opt.dataset, opt.model, not opt.no_PE, opt.shf_dim, opt.ptr, opt.pxr)
+        opt.dataset, opt.model, not opt.maskPE, opt.shf_dim, opt.ptr, opt.pxr)
     wf.write(line)
 
 
 opt = parse_option()
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print("Using device:", device)
 
-imgshuffle = imgshuffle(patch_ratio=opt.ptr, pixel_ratio=opt.pxr, shf_dim=opt.shf_dim)
-data_loader, data_size = model_dataloader(root_dir='../data/cifar-10/',c_fn=imgshuffle)
-target_train_loader, target_test_loader, shadow_train_loader, shadow_test_loader = data_loader['train'], data_loader['val'], data_loader['val'], data_loader['train']
-if opt.model == 'VIT':
-    target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
-    shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
-    # target_combine_model.PE = False
-    # shadow_combine_model.PE = False
-elif opt.model == 'VIT_mask':
-    target_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
-    shadow_combine_model = ViT_mask.load_VIT('./Network/VIT_Model_cifar10/VIT_mask.pth')
-elif opt.model == 'VIT_NoPE':
-    target_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
-    shadow_combine_model = ViT.load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
-    # target_combine_model.PE = False
-    # shadow_combine_model.PE = False
-elif opt.model == 'VIT_ape':
-    target_combine_model = ViT_ape.load_VIT('./Network/VIT_Model_cifar10/VIT_ape.pth')
-    shadow_combine_model = ViT_ape.load_VIT('./Network/VIT_Model_cifar10/VIT_ape_shadow.pth')
-elif opt.model == 'VIT_mask_avg':
-    target_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg.pth')
-    shadow_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_shadow.pth')
-elif opt.model == 'VIT_mask_avg_fill':
-    target_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_fill.pth')
-    shadow_combine_model = ViT_mask_avg.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_avg_fill_shadow.pth')
-elif opt.model == 'VIT_mask_plus_fill':
-    target_combine_model = ViT_mask_plus.load_VIT('./saved_model/VIT_Model_cifar10/VIT_mask_plus_fill.pth')
-    shadow_combine_model = ViT_mask_plus.load_VIT('./saved_model/VIT_Model_cifar10/VIT_mask_plus_fill_shadow.pth')
+config_dict = { 'ViT': {
+                'cifar10': "config/cifar10/",
+                'cifar100': "config/cifar100/",
+                'ImageNet100': "config/ViT-T/"
+                },
+                'Swin': {
+                'ImageNet100': "config/Swin-T/",
+                'cifar10': "config/Swin-T-cifar10/",
+                'cifar100': "config/Swin-T-cifar100/"
+                }
+}
+
+# torch.random.manual_seed(1001)
+config_path = config_dict['Swin'][opt.dataset] if 'Swin' in opt.model else config_dict['ViT'][opt.dataset]
+
+
+config = MyConfig.MyConfig(path=config_path)
+
+target_loader, target_size = cifar_dataloader(config, is_target=True)
+shadow_loader, shadow_size = cifar_dataloader(config, is_target=False)
+target_train_loader, target_test_loader, shadow_train_loader, shadow_test_loader = target_loader['train'], target_loader['val'], shadow_loader['train'], shadow_loader['val']
+if "Swin" in opt.model:
+    if 'mask_avg' in opt.model:
+        path = config.path.model_path+opt.model[:13]
+        target_model = Swin_mask_avg.load_Swin(path+opt.model[13:]+'.pth', config)
+        shadow_model = Swin_mask_avg.load_Swin(path+'_shadow'+opt.model[13:]+'.pth', config)
+    elif 'ape' in opt.model:
+        path = config.path.model_path + opt.model + '.pth'
+        target_model = Swin_ape.load_Swin(path + '.pth', config)
+        shadow_model = Swin_ape.load_Swin(path + '_shadow.pth', config)
+    elif 'mask' in opt.model:
+        path = config.path.model_path + opt.model[:9]
+        target_model = Swin_mask.load_Swin(path+opt.model[9:]+'.pth', config)
+        shadow_model = Swin_mask.load_Swin(path + '_shadow'+opt.model[9:]+'.pth', config)
+    else:
+        path = config.path.model_path + opt.model
+        target_model = Swin.load_Swin(path + '.pth', config)
+        shadow_model = Swin.load_Swin(path + '_shadow.pth', config)
 else:
-    alpha = 0.5
-    target_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus.pth')
-    shadow_combine_model = ViT_mask_plus.load_VIT('./Network/VIT_Model_cifar10/VIT_mask_plus_shadow.pth')
-    target_pe_mean = target_combine_model.pos_embedding.data[:17,].mean(0)
-    target_combine_model.pos_embedding.data = (1-alpha)*target_combine_model.pos_embedding.data + alpha*target_pe_mean
-    shadow_pe_mean = shadow_combine_model.pos_embedding.data[:17,].mean(0)
-    shadow_combine_model.pos_embedding.data = (1-alpha)*shadow_combine_model.pos_embedding.data + alpha*shadow_pe_mean
-    # target_combine_model.pos_embedding.data = target_combine_model.pos_embedding[np.repeat(17,18)]
-    # shadow_combine_model.pos_embedding.data = shadow_combine_model.pos_embedding[np.repeat(17,18)]
+    if 'ViT_mask_avg' in opt.model:
+        path = config.path.model_path+opt.model[:12]
+        target_model = ViT_mask_avg.load_VIT(path+opt.model[12:]+'.pth', config)
+        shadow_model = ViT_mask_avg.load_VIT(path+'_shadow'+opt.model[12:]+'.pth', config)
+    elif 'ViT_ape' in opt.model:
+        path = config.path.model_path + opt.model + '.pth'
+        target_model = ViT_ape.load_VIT(path + '.pth', config)
+        shadow_model = ViT_ape.load_VIT(path + '_shadow.pth', config)
+    elif 'mask' in opt.model:
+        path = config.path.model_path + opt.model[:8]
+        target_model = ViT_mask.load_VIT(path+opt.model[8:]+'.pth', config)
+        shadow_model = ViT_mask.load_VIT(path + '_shadow'+opt.model[8:]+'.pth', config)
+    else :
+        path = config.path.model_path + opt.model
+        target_model = ViT.load_VIT(path + '.pth', config)
+        shadow_model = ViT.load_VIT(path + '_shadow.pth', config)
+
+if opt.maskPE:
+    target_model.PE = False
+    shadow_model.PE = False
+
 
 # if opt.no_PE == False:
-#     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
-#     shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
+#     target_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE.pth')
+#     shadow_model = load_VIT('./Network/VIT_Model_cifar10/VIT_PE_shadow.pth')
 # else:
-#     target_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
-#     shadow_combine_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
-#     target_combine_model.PE = False
-#     shadow_combine_model.PE = False
+#     target_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE.pth')
+#     shadow_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
+
 
 
 if opt.select_posteriors == -1:
@@ -187,7 +211,7 @@ os.makedirs("log/model/exp_attack/", exist_ok=True)
 if opt.select_posteriors == -1:
     if opt.mia_type == "nn-based":
         attack = attackTraining(opt, target_train_loader, target_test_loader,
-                                shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
 
@@ -219,7 +243,7 @@ if opt.select_posteriors == -1:
     elif opt.mia_type == "shf-nn-based":
         attack_model = shfattacktrain.MLP_CE()
         attack = shfattacktrain.attackTraining(opt, target_train_loader, target_test_loader,
-                                shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
 
@@ -242,7 +266,7 @@ if opt.select_posteriors == -1:
 
     elif opt.mia_type == "metric-based":
         attack = AttackTrainingMetric(opt, target_train_loader, target_test_loader,
-                                      shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                      shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
 
@@ -293,7 +317,7 @@ if opt.select_posteriors == -1:
     # Note that we change train acc to threshold in label-only attack
     elif opt.mia_type == "label-only":
         attack = AttackLabelOnly(opt, target_train_loader, target_test_loader,
-                                 shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                 shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         acc_train = 0
         acc_test = 0
@@ -324,7 +348,7 @@ if opt.select_posteriors == -1:
 else:
     if opt.mia_type == "nn-based":
         attack = attackTraining(opt, target_train_loader, target_test_loader,
-                                shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
 
@@ -349,7 +373,7 @@ else:
 
     elif opt.mia_type == "metric-based":
         attack = AttackTrainingMetric(opt, target_train_loader, target_test_loader,
-                                      shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                      shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
 
@@ -384,7 +408,7 @@ else:
     # Note that we change train acc to threshold in label-only attack
     elif opt.mia_type == "label-only":
         attack = AttackLabelOnly(opt, target_train_loader, target_test_loader,
-                                 shadow_train_loader, shadow_test_loader, target_combine_model, shadow_combine_model, attack_model, device)
+                                 shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         acc_train = 0
         acc_test = 0

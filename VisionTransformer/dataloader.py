@@ -13,18 +13,20 @@ from PIL import Image
 
 class VITdataset(Dataset):
 
-    def __init__(self, root_dir, spilt='nothing', random_seed = 1001):
+    def __init__(self, root_dir, split, num_class, nums_per_class,random_seed = 1001, is_target=True):
         self.Transform = transforms.Compose([transforms.Resize([32, 32]),
-                                         transforms.ToTensor(),
-                                         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+                                             # transforms.RandomHorizontalFlip(),
+                                             transforms.ToTensor(),
+                                             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         # Output of pretransform should be PIL images
         self.data_dir = root_dir
         self.dataset = datasets.ImageFolder(self.data_dir+'train', self.Transform) + datasets.ImageFolder(self.data_dir+'val', self.Transform)
-        train_set, val_set = dataset_split(self.dataset,random_seed)
-        if spilt == 'train':
-            self.dataset = train_set
-        elif spilt == 'val':
-            self.dataset = val_set
+        train_set_1, val_set_1 = dataset_split_2(self.dataset, num_class, nums_per_class[0], is_target, random_seed)
+        train_set_2, val_set_2 = dataset_split_2(self.dataset, num_class, nums_per_class[1], is_target, random_seed)
+        if split == 'train':
+            self.dataset = train_set_1 + train_set_2
+        elif split == 'val':
+            self.dataset = val_set_1 + val_set_2
 
 
     def __len__(self):
@@ -51,22 +53,62 @@ class VITdataset(Dataset):
 
 
 def cifar_dataloader(config, c_fn=None, is_target=True):
-    seed = config.general.seed_target if is_target else config.general.seed_shadow
-    train_set = VITdataset(root_dir=config.path.data_path, spilt='train', random_seed = seed)
-    val_set = VITdataset(root_dir=config.path.data_path, spilt='val', random_seed = seed)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, collate_fn=c_fn)
-    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False, collate_fn=c_fn)
+    seed = config.general.seed
+    train_set = VITdataset(root_dir=config.path.data_path,
+                           split='train',
+                           num_class = config.patch.num_classes,
+                           nums_per_class = config.patch.nums_per_class,
+                           random_seed = seed,
+                           is_target=is_target)
+
+    val_set = VITdataset(root_dir=config.path.data_path,
+                           split='val',
+                           num_class = config.patch.num_classes,
+                           nums_per_class = config.patch.nums_per_class,
+                           random_seed = seed,
+                           is_target=is_target)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, num_workers=config.general.num_workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False, num_workers=config.general.num_workers, pin_memory=True)
     data_loader = {'train': train_loader, 'val': val_loader}
     data_size = {"train": len(train_set), "val": len(val_set)}
     return data_loader, data_size
 
 
-def dataset_split(data, random_seed):
-    np.random.seed(random_seed)
-    idx =list(range(len(data)))
+# def dataset_split(data, random_seed, is_target , split):
+def dataset_split(dataset, num_class, nums_per_class, is_target=True, seed=101):
+    np.random.seed(seed)
+    idx = list(range(nums_per_class))
     np.random.shuffle(idx)
-    train_set = torch.utils.data.Subset(data, idx[0:int(2*len(idx)/3)])
-    val_set = torch.utils.data.Subset(data, idx[int(2*len(idx)/3):])
+    idx_train = np.array(idx)[:int(2*nums_per_class / 3)] if is_target else np.array(idx)[int(nums_per_class / 3):]
+    idx_val = np.array(idx)[int(2*nums_per_class / 3):] if is_target else np.array(idx)[:int(nums_per_class / 3)]
+    # idx_train = np.array(idx)[:int(nums_per_class / 2)] if is_target else np.array(idx)[int(nums_per_class / 2):]
+    # idx_val = np.array(idx)[int(nums_per_class / 2):] if is_target else np.array(idx)[:int(nums_per_class / 2)]
+    index_train = []
+    index_val = []
+    for i in range(num_class):
+        index_train += idx_train.tolist()
+        idx_train += nums_per_class
+        index_val += idx_val.tolist()
+        idx_val += nums_per_class
+    train_set = Subset(dataset, index_train)
+    val_set = Subset(dataset, index_val)
+    return train_set, val_set
+
+def dataset_split_2(dataset, num_class, nums_per_class, is_target=True, seed=101):
+    np.random.seed(seed)
+    idx = list(range(nums_per_class))
+    np.random.shuffle(idx)
+    idx_train = np.array(idx)[:int(nums_per_class / 2)] if is_target else np.array(idx)[int(nums_per_class / 2):]
+    idx_val = np.array(idx)[int(nums_per_class / 2):] if is_target else np.array(idx)[:int(nums_per_class / 2)]
+    index_train = []
+    index_val = []
+    for i in range(num_class):
+        index_train += idx_train.tolist()
+        idx_train += nums_per_class
+        index_val += idx_val.tolist()
+        idx_val += nums_per_class
+    train_set = Subset(dataset, index_train)
+    val_set = Subset(dataset, index_val)
     return train_set, val_set
 
 
@@ -137,7 +179,7 @@ class imgshuffle():
 #         data = self.im_to_patches(data)
 #         return data
 
-def public_data(root_dir, img_size=224, patch_size=16, length = 100, random_seed = 101):
+def public_data(root_dir, img_size=224, patch_size=16, length = 256, random_seed = 101):
     np.random.seed(random_seed)
     im_to_patches = torch.nn.Unfold((patch_size, patch_size), stride=patch_size)
     Transform = transforms.Compose([
@@ -145,13 +187,11 @@ def public_data(root_dir, img_size=224, patch_size=16, length = 100, random_seed
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     ])
-    files = os.listdir(root_dir)
-    idx = np.random.choice(np.arange(len(files)), size=length, replace=False)
-    data_list = []
-    for i in range(length):
-        img = Image.open(root_dir+files[idx[i]])
-        data_list.append(Transform(img))
-    data = im_to_patches(torch.stack(data_list, dim=0))
+    dataset = datasets.ImageFolder(root_dir, Transform)
+    idx = np.random.choice(np.arange(len(dataset)), size=length, replace=False)
+    subset = torch.utils.data.Subset(dataset, idx)
+    data = torch.stack([subset[i][0] for i in range(length)], dim=0)
+    data = im_to_patches(data)
     return data
 
 
@@ -201,8 +241,8 @@ def train_data_spilt(dataset, num_class, nums_per_class, is_target=True, seed=10
 def ImageNet_loader(config, is_target=True):
     train_set = imageNet100(root_dir=config.path.data_path, spilt='train', is_target=is_target, seed=config.general.train_spilt_seed)
     val_set = imageNet100(root_dir=config.path.data_path, spilt='val')
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True)
-    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, num_workers=config.general.num_workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False, num_workers=config.general.num_workers, pin_memory=True)
     data_loader = {'train': train_loader, 'val': val_loader}
     data_size = {"train": len(train_set), "val": len(val_set)}
     return data_loader, data_size
@@ -211,8 +251,8 @@ def ImageNet_loader(config, is_target=True):
 def ImageNet_MIA_loader(root_dir, config, is_target=True):
     train_set = imageNet100(root_dir=root_dir, spilt='train', is_target=is_target)
     nontrain_set = imageNet100(root_dir=root_dir, spilt='val+test')
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True)
-    nontrain_loader = torch.utils.data.DataLoader(nontrain_set, batch_size=config.learning.batch_size, shuffle=False)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, pin_memory=True)
+    nontrain_loader = torch.utils.data.DataLoader(nontrain_set, batch_size=config.learning.batch_size, shuffle=False, pin_memory=True)
     data_loader = {'train': train_loader, 'val': nontrain_loader}
     data_size = {"train": len(train_set), "val": len(nontrain_set)}
     return data_loader, data_size

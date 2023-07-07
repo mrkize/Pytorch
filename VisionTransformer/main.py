@@ -1,4 +1,7 @@
 import argparse
+
+import numpy as np
+
 from mymodel import ViT,ViT_mask
 from dataloader import cifar_dataloader, VITdataset, imgshuffle, ImageNet_loader
 from masking_generator import JigsawPuzzleMaskedRegion
@@ -9,10 +12,11 @@ from utils import MyConfig
 
 parser = argparse.ArgumentParser('argument for training')
 parser.add_argument('--ordinary_train', action="store_true", help='whether use mask')
-parser.add_argument('--epochs', type=int, default=1, help='training epoch')
-parser.add_argument('--config', type=str, default='IN100Swin', help='dataset')
-parser.add_argument('--model_type', type=str, default='Swin_mask_avg', help='model name')
+parser.add_argument('--epochs', type=int, default=50, help='training epoch')
+parser.add_argument('--config', type=str, default='cifar10', help='dataset and config')
+parser.add_argument('--model_type', type=str, default='ViT_mask', help='model name')
 parser.add_argument('--mask_type', type=str, default='pub_fill', help='if fill')
+parser.add_argument('--mix_up', action="store_true", help='use Mixup')
 parser.add_argument('--mask_ratio', type=float, default=0.5, help='mask ratio')
 opt = parser.parse_args()
 
@@ -22,24 +26,27 @@ config_dict ={
     'cifar10': "config/cifar10/",
     'cifar100': "config/cifar100/",
     'ImageNet100': "config/ViT-T/",
-    'IN100Swin': "config/Swin-T/"
+    'IN100Swin': "config/Swin-T/",
+    'Swincifar10': "config/Swin-T-cifar10/",
+    'Swincifar100': "config/Swin-T-cifar100/"
 }
 
+opt.mix_up = True
 torch.random.manual_seed(1001)
 config_path = config_dict[opt.config]
 config = MyConfig.MyConfig(path=config_path)
-config.set_subkey('learning', 'epochs', opt.epochs)
+# config.set_subkey('learning', 'epochs', opt.epochs)
 def ordinary_train(model_type):
     if 'cifar' in config_path:
         data_loader, data_size = cifar_dataloader(config=config, is_target=True)
     else:
         data_loader, data_size = ImageNet_loader(config=config, is_target=True)
-    train_VIT(model_type, data_loader, data_size, config)
+    train_VIT(model_type, data_loader, data_size, opt.mix_up, config)
     if 'cifar' in config_path:
         data_loader, data_size = cifar_dataloader(config=config, is_target=False)
     else:
         data_loader, data_size = ImageNet_loader(config=config, is_target=False)
-    train_VIT(model_type, data_loader, data_size, config)
+    train_VIT(model_type + '_shadow', data_loader, data_size, opt.mix_up, config)
 
 def mask_train(model_type):
     if 'cifar' in config_path:
@@ -47,20 +54,56 @@ def mask_train(model_type):
     else:
         data_loader, data_size = ImageNet_loader(config=config, is_target=True)
 
-    mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
+    mask_train_model(model_type, config, data_loader, data_size, if_mixup=opt.mix_up, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
 
     if 'cifar' in config_path:
         data_loader, data_size = cifar_dataloader(config=config, is_target=False)
     else:
         data_loader, data_size = ImageNet_loader(config=config, is_target=False)
 
-    mask_train_model(model_type, config, data_loader, data_size, if_mixup=False, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
+    mask_train_model(model_type + '_shadow', config, data_loader, data_size, if_mixup=opt.mix_up, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
 
 
-if opt.ordinary_train:
-    ordinary_train(opt.model_type)
-else:
+# if opt.ordinary_train:
+#     ordinary_train(opt.model_type)
+# else:
+#     mask_train(opt.model_type)
+
+# ordinary_train('ViT')
+opt.model_type = 'ViT_mask_mjp'
+# for i in range(4,32,4):
+#     config.set_subkey('patch', 'num_masking_patches', i)
+#     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
+#     opt.mask_ratio = i/config.patch.num_patches
+#     mask_train(opt.model_type)
+opt.mask_type = 'mjp'
+for i in range(60,64,4):
+    config.set_subkey('patch', 'num_masking_patches', i)
+    config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
+    opt.mask_ratio = i/config.patch.num_patches
     mask_train(opt.model_type)
+
+
+# opt.config = 'cifar100'
+# config_path = config_dict[opt.config]
+# config = MyConfig.MyConfig(path=config_path)
+# ordinary_train('ViT')
+# opt.config = 'Swincifar10'
+# config_path = config_dict[opt.config]
+# config = MyConfig.MyConfig(path=config_path)
+# ordinary_train('Swin')
+# opt.config = 'Swincifar100'
+# config_path = config_dict[opt.config]
+# config = MyConfig.MyConfig(path=config_path)
+# ordinary_train('Swin')
+
+
+
+
+# for i in range(2,14,2):
+#     config.set_subkey('mask', 'num_masking_patches', i)
+#     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
+#     mask_train(opt.model_type)
 
 
 

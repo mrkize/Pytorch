@@ -134,7 +134,7 @@ class VIT(nn.Module):
 
         self.to_patch_embedding = PatchEmbed(image_size=image_size, patch_size=patch_size, embed_dim=embed_dim)
         self.PE = True
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_patches+1, embed_dim))
+        self.pos_embedding = nn.Parameter(torch.randn(num_patches+1, embed_dim))
         self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))					# nn.Parameter()定义可学习参数
         self.dropout = nn.Dropout(emb_dropout)
 
@@ -156,7 +156,7 @@ class VIT(nn.Module):
         x = torch.cat((cls_tokens, x), dim=1)               # 将cls_token拼接到patch token中去       (b, 65, dim)
         # x = para(x) if para != None else x
         if self.PE == True:
-            x += self.pos_embedding[:, :(n+1)]                  # 加位置嵌入（直接加）      (b, 65, dim)
+            x += self.pos_embedding[:]                  # 加位置嵌入（直接加）      (b, 65, dim)
         x = self.dropout(x)
 
         x = self.transformer(x)                                                 # (b, 65, dim)

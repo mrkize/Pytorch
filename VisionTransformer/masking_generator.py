@@ -31,7 +31,7 @@ from dataloader import public_data
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class MaskingGenerator:
     def __init__(
-            self, input_size, num_masking_patches, min_num_patches=8, max_num_patches=None,
+            self, input_size, num_masking_patches, min_num_patches=2, max_num_patches=None,
             min_aspect=0.3, max_aspect=None):
         if not isinstance(input_size, tuple):
             input_size = (input_size, ) * 2
@@ -122,7 +122,7 @@ class JigsawPuzzleMaskedRegion(object):
         num_masking_patches=8,
         min_num_patches=2,
         mask_type="mjp",
-        pub_data_dir = '../data/ImageNet100/Public/'
+        pub_data_dir = '../data/ImageNet100/public/'
     ):
         input_size = int(img_size // patch_size)
         self.pub_data = public_data(root_dir=pub_data_dir, img_size=img_size, patch_size=patch_size).to(device)
@@ -178,9 +178,10 @@ class JigsawPuzzleMaskedRegion(object):
             to_patches = self.im_to_patches(x) # [N, C*patch_size*patch_size, seq_len]
             masks, nonzero, nonzero_shuffle = self._get_masked_indexes()
             idx = np.arange(self.pub_data.shape[0])
+            # np.random.seed(random.randint(100000))
             pub_idx = np.random.choice(idx,N,replace=False).tolist()
             # pubdata = self.pub_data[pub_idx,:,:]
-            to_patches[:,:,nonzero] = self.pub_data[pub_idx,:,:][:,:,nonzero]
+            to_patches[:,:,nonzero] = self.pub_data[pub_idx,:,:][:,:,nonzero_shuffle]
 
             cls_pad = np.zeros((1, 1), dtype=np.int32)
             masks = np.concatenate([cls_pad, masks[np.newaxis, :]], axis=1) # [1, C+1]

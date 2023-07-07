@@ -576,7 +576,8 @@ class SwinTransformer(nn.Module):
             pos_embedding = pos[seq_ord]
         else:
             pos_embedding = self.pos_embedding[:]
-        x = x + pos_embedding
+        if self.PE:
+            x = x + pos_embedding
         x = self.pos_drop(x)
 
         for layer in self.layers:

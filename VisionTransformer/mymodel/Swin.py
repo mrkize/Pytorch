@@ -92,8 +92,8 @@ class PatchEmbed(nn.Module):
     """
     def __init__(self, img_size=224, patch_size=4, in_c=3, embed_dim=96, norm_layer=None):
         super().__init__()
-        img_size = [img_size, img_size]
-        patch_size = [patch_size, patch_size]
+        img_size = (img_size, img_size)
+        patch_size = (patch_size, patch_size)
         patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
         self.patch_size = patch_size
         self.in_chans = in_c
@@ -495,7 +495,7 @@ class SwinTransformer(nn.Module):
         use_checkpoint (bool): Whether to use checkpointing to save memory. Default: False
     """
 
-    def __init__(self, patch_size=4, in_chans=3, num_classes=1000,
+    def __init__(self, img_size=224,patch_size=4, in_chans=3, num_classes=1000,
                  embed_dim=96, depths=(2, 2, 6, 2), num_heads=(3, 6, 12, 24),
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
@@ -512,7 +512,7 @@ class SwinTransformer(nn.Module):
         self.mlp_ratio = mlp_ratio
 
         # split image into non-overlapping patches
-        self.patch_embed = PatchEmbed(
+        self.patch_embed = PatchEmbed(img_size=img_size,
             patch_size=patch_size, in_c=in_chans, embed_dim=embed_dim,
             norm_layer=norm_layer if self.patch_norm else None)
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -520,8 +520,8 @@ class SwinTransformer(nn.Module):
         num_patches = self.patch_embed.num_patches
         # absolute position embedding
         self.PE = True
-        self.pos_embedding = nn.Parameter(torch.zeros(num_patches, embed_dim))
-        trunc_normal_(self.pos_embedding, std=.02)
+        self.pos_embedding = nn.Parameter(torch.randn(num_patches, embed_dim))
+        # trunc_normal_(self.pos_embedding, std=.02)
 
 
 
@@ -583,24 +583,28 @@ class SwinTransformer(nn.Module):
 
 def creat_Swin(config):
 
-    model_Swin = SwinTransformer(in_chans=3,
-                                patch_size=4,
-                                window_size=7,
-                                embed_dim=96,
+    model_Swin = SwinTransformer(img_size=config.patch.image_size,
+                                in_chans=3,
+                                patch_size=config.patch.patch_size,
+                                window_size=config.patch.window_size,
+                                embed_dim=config.patch.embed_dim,
                                 depths=(2, 2, 6, 2),
                                 num_heads=(3, 6, 12, 24),
-                                num_classes=config.patch.num_classes)
+                                num_classes=config.patch.num_classes,
+                                drop_rate=config.patch.drop_rate)
     return model_Swin
 
 def load_Swin(model_path, config):
 
-    model_Swin = SwinTransformer(in_chans=3,
-                                patch_size=4,
-                                window_size=7,
-                                embed_dim=96,
+    model_Swin = SwinTransformer(img_size=config.patch.image_size,
+                                in_chans=3,
+                                patch_size=config.patch.patch_size,
+                                window_size=config.patch.window_size,
+                                embed_dim=config.patch.embed_dim,
                                 depths=(2, 2, 6, 2),
                                 num_heads=(3, 6, 12, 24),
-                                num_classes=config.patch.num_classes)
+                                num_classes=config.patch.num_classes,
+                                drop_rate=config.patch.drop_rate)
     model_Swin.load_state_dict(torch.load(model_path))
     return model_Swin
 

@@ -171,7 +171,8 @@ class VIT(nn.Module):
             pos_embedding = pos[seq_ord]
         else:
             pos_embedding = self.pos_embedding[:]
-        x += pos_embedding
+        if self.PE:
+            x += pos_embedding
         x = self.dropout(x)
 
         x = self.transformer(x)                                                 # (b, 65, dim)
