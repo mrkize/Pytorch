@@ -75,9 +75,9 @@ config = MyConfig.MyConfig(path=config_path)
 # else:
 #     mask_train(opt.model_type)
 
-ordinary_train('ViT')
+# ordinary_train('ViT')
 
-for i in range(12,14,4):
+for i in range(32,34,4):
     config.set_subkey('patch', 'num_masking_patches', i)
     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
     opt.mask_ratio = i/config.patch.num_patches

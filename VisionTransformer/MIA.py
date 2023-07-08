@@ -30,7 +30,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=2,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=25,
+    parser.add_argument('--epochs', type=int, default=50,
                         help='number of training epochs')
     parser.add_argument('--shf_dim', type=int, default=0,
                         help='shuffle dim for image, <=0 means donot shuffle')
@@ -69,7 +69,7 @@ def parse_option():
                         help="multi_label_dataset")
     parser.add_argument('--mia_type', type=str, default="nn-based",
                         help="nn-based, lebel-only, metric-based")
-    parser.add_argument('--select_posteriors', type=int, default=-1,
+    parser.add_argument('--select_posteriors', type=int, default=3,
                         help='how many posteriors we select, if -1, we remains the original setting')
 
     parser.add_argument('--mia_defense', type=str,
@@ -217,7 +217,7 @@ if opt.select_posteriors == -1:
 else:
     attack_model = MLP_CE(selected_posteriors=opt.select_posteriors)
 
-ratio = [0, 0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375]
+ratio = [0, (0.0625), (0.125), (0.1875), (0.25), (0.3125), (0.375), (0.4375), (0.5), (0.5625), (0.625), (0.6875), (0.75), (0.8125), (0.875), (0.9375)]
 
 
 os.makedirs("log/model/exp_attack/", exist_ok=True)
