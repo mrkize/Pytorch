@@ -196,24 +196,20 @@ def public_data(root_dir, img_size=224, patch_size=16, length = 256, random_seed
 
 
 
-class imageNet100(Dataset):
+class imageNet10(Dataset):
 
-    def __init__(self, root_dir, spilt='nothing', num_class=100, nums_per_class=1000, is_target = True, seed = 101):
+    def __init__(self, root_dir, split, num_class=10, nums_per_class=700, is_target = True, seed = 101):
         # Output of pretransform should be PIL images
         self.Transform = transforms.Compose([transforms.Resize([224,224]),
                                              transforms.ToTensor(),
                                              transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
         self.root_dir = root_dir
-        if spilt == 'train':
-            self.dataset = datasets.ImageFolder(self.root_dir+'train', self.Transform)
-            self.dataset = train_data_spilt(self.dataset, num_class, nums_per_class, is_target, seed)
-        elif spilt == 'val':
-            self.dataset = datasets.ImageFolder(self.root_dir+'val', self.Transform)
-        elif spilt == 'test':
-            self.dataset = datasets.ImageFolder(self.root_dir+'test', self.Transform)
+        self.dataset = datasets.ImageFolder(self.root_dir, self.Transform)
+        set1, set2 = data_spilt(self.dataset, num_class, nums_per_class, is_target, seed)
+        if split == 'train':
+            self.dataset = set1
         else:
-            self.dataset = datasets.ImageFolder(self.root_dir+'val', self.Transform) + datasets.ImageFolder(self.root_dir+'test', self.Transform)
-
+            self.dataset = set2
 
     def __len__(self):
         return len(self.dataset)
@@ -225,22 +221,27 @@ class imageNet100(Dataset):
         return self.dataset[idx][0], self.dataset[idx][1]
 
 
-def train_data_spilt(dataset, num_class, nums_per_class, is_target=True, seed=101):
+def data_spilt(dataset, num_class, nums_per_class, is_target=True, seed=101):
+    idx = list(range(int(len(dataset)/num_class)))
     np.random.seed(seed)
-    idx = list(range(nums_per_class))
     np.random.shuffle(idx)
-    idx = np.array(idx)[:int(nums_per_class/2)] if is_target else np.array(idx)[int(nums_per_class/2):]
-    index = []
+    idx_train = np.array(idx)[:nums_per_class] if is_target else np.array(idx)[-nums_per_class:]
+    idx_val = np.array(idx)[nums_per_class:] if is_target else np.array(idx)[:-nums_per_class]
+    index_train = []
+    index_val = []
     for i in range(num_class):
-        index += idx.tolist()
-        idx += nums_per_class
-    train_set = Subset(dataset, index)
-    return train_set
+        index_train += idx_train.tolist()
+        idx_train += nums_per_class
+        index_val += idx_val.tolist()
+        idx_val += nums_per_class
+    train_set = Subset(dataset, index_train)
+    val_set = Subset(dataset, index_val)
+    return train_set, val_set
 
 
 def ImageNet_loader(config, is_target=True):
-    train_set = imageNet100(root_dir=config.path.data_path, spilt='train', is_target=is_target, seed=config.general.train_spilt_seed)
-    val_set = imageNet100(root_dir=config.path.data_path, spilt='val')
+    train_set = imageNet10(root_dir=config.path.data_path, split='train', is_target=is_target, seed=config.general.seed)
+    val_set = imageNet10(root_dir=config.path.data_path, split='val', is_target=is_target, seed=config.general.seed)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, num_workers=config.general.num_workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=config.learning.batch_size, shuffle=False, num_workers=config.general.num_workers, pin_memory=True)
     data_loader = {'train': train_loader, 'val': val_loader}
@@ -249,8 +250,8 @@ def ImageNet_loader(config, is_target=True):
 
 
 def ImageNet_MIA_loader(root_dir, config, is_target=True):
-    train_set = imageNet100(root_dir=root_dir, spilt='train', is_target=is_target)
-    nontrain_set = imageNet100(root_dir=root_dir, spilt='val+test')
+    train_set = imageNet10(root_dir=root_dir, split='train', is_target=is_target)
+    nontrain_set = imageNet10(root_dir=root_dir, split='val+test')
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=config.learning.batch_size, shuffle=True, pin_memory=True)
     nontrain_loader = torch.utils.data.DataLoader(nontrain_set, batch_size=config.learning.batch_size, shuffle=False, pin_memory=True)
     data_loader = {'train': train_loader, 'val': nontrain_loader}

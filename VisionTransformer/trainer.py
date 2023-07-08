@@ -66,11 +66,11 @@ def train_model(model, criterion_hard, optimizer, scheduler, dataloaders, datase
             epoch_loss = running_loss / dataset_sizes[phase]
             epoch_acc = 1.0 * running_corrects / dataset_sizes[phase]
             if phase == 'train':
-                print('train acc:', epoch_acc, end=' ')
+                print('train acc:{:.3f}'.format(epoch_acc), end=' ')
                 retunr_value_train[0][epoch] = epoch_loss
                 retunr_value_train[1][epoch] = epoch_acc
             else:
-                print('val acc:', epoch_acc)
+                print('val acc:{:.3f}'.format(epoch_acc))
                 retunr_value_train[2][epoch] = epoch_loss
                 retunr_value_train[3][epoch] = epoch_acc
             #print('{} Loss: {:.4f} Acc: {:.4f}'.format(
@@ -297,6 +297,6 @@ def mask_train_model(model_type, config, data_loader, data_size, mask_ratio=0.2,
     # # learning rate adopt
     # exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=config.learning.decrease_lr_every,gamma=config.learning.decrease_lr_factor)
     model, ret = mask_train(model, data_loader, data_size, criterion, exp_lr_scheduler, optimizer, mixup_fn, criterion_mixup, jigsaw_pullzer, config)
-    torch.save(model.state_dict(), config.path.model_path + model_type +'_'+ str(mask_ratio) + '.pth')
-    np.save(config.path.result_path +model_type +'_'+ str(mask_ratio)  + '.pth', ret)
+    torch.save(model.state_dict(), config.path.model_path + model_type +'_'+ "{:.3f}".format(mask_ratio) + '.pth')
+    np.save(config.path.result_path +model_type +'_'+ "{:.3f}".format(mask_ratio)  + '.pth', ret)
     return

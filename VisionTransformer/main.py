@@ -13,7 +13,7 @@ from utils import MyConfig
 parser = argparse.ArgumentParser('argument for training')
 parser.add_argument('--ordinary_train', action="store_true", help='whether use mask')
 parser.add_argument('--epochs', type=int, default=50, help='training epoch')
-parser.add_argument('--config', type=str, default='cifar10', help='dataset and config')
+parser.add_argument('--dataset', type=str, default='cifar10', help='dataset and config')
 parser.add_argument('--model_type', type=str, default='ViT_mask', help='model name')
 parser.add_argument('--mask_type', type=str, default='pub_fill', help='if fill')
 parser.add_argument('--mix_up', action="store_true", help='use Mixup')
@@ -22,19 +22,22 @@ opt = parser.parse_args()
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-config_dict ={
-    'cifar10': "config/cifar10/",
-    'cifar100': "config/cifar100/",
-    'ImageNet100': "config/ViT-T/",
-    'IN100Swin': "config/Swin-T/",
-    'Swincifar10': "config/Swin-T-cifar10/",
-    'Swincifar100': "config/Swin-T-cifar100/"
+config_dict = { 'ViT': {
+                'cifar10': "config/cifar10/",
+                'cifar100': "config/cifar100/",
+                'ImageNet10': "config/ImageNet10/",
+                'ImageNet100': "config/ImageNet100/"
+                },
+                'Swin': {
+                'cifar10': "config/Swin-cifar10/",
+                'cifar100': "config/Swin-cifar100/",
+                'ImageNet10': "config/Swin-ImageNet10/",
+                'ImageNet100': "config/Swin-ImageNet100/"
+                }
 }
 
 opt.mix_up = True
 torch.random.manual_seed(1001)
-config_path = config_dict[opt.config]
-config = MyConfig.MyConfig(path=config_path)
 # config.set_subkey('learning', 'epochs', opt.epochs)
 def ordinary_train(model_type):
     if 'cifar' in config_path:
@@ -64,28 +67,30 @@ def mask_train(model_type):
     mask_train_model(model_type + '_shadow', config, data_loader, data_size, if_mixup=opt.mix_up, mask_ratio=opt.mask_ratio, mt=opt.mask_type)
 
 
+
+config_path = config_dict['Swin'][opt.dataset] if 'Swin' in opt.model_type else config_dict['ViT'][opt.dataset]
+config = MyConfig.MyConfig(path=config_path)
 # if opt.ordinary_train:
 #     ordinary_train(opt.model_type)
 # else:
 #     mask_train(opt.model_type)
 
-# ordinary_train('ViT')
-opt.model_type = 'ViT_mask_mjp'
-# for i in range(4,32,4):
-#     config.set_subkey('patch', 'num_masking_patches', i)
-#     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
-#     opt.mask_ratio = i/config.patch.num_patches
-#     mask_train(opt.model_type)
-opt.mask_type = 'mjp'
-for i in range(60,64,4):
+ordinary_train('ViT')
+
+for i in range(12,14,4):
     config.set_subkey('patch', 'num_masking_patches', i)
     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
     opt.mask_ratio = i/config.patch.num_patches
     mask_train(opt.model_type)
+# for i in range(60,64,4):
+#     config.set_subkey('patch', 'num_masking_patches', i)
+#     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
+#     opt.mask_ratio = i/config.patch.num_patches
+#     mask_train(opt.model_type)
 
 
 # opt.config = 'cifar100'
-# config_path = config_dict[opt.config]
+# config_path = config_dict[opt.dataset]
 # config = MyConfig.MyConfig(path=config_path)
 # ordinary_train('ViT')
 # opt.config = 'Swincifar10'
