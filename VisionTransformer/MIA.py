@@ -30,7 +30,7 @@ def parse_option():
                         help='batch_size')
     parser.add_argument('--num_workers', type=int, default=2,
                         help='num of workers to use')
-    parser.add_argument('--epochs', type=int, default=50,
+    parser.add_argument('--epochs', type=int, default=25,
                         help='number of training epochs')
     parser.add_argument('--shf_dim', type=int, default=0,
                         help='shuffle dim for image, <=0 means donot shuffle')
@@ -43,7 +43,7 @@ def parse_option():
                         help='learning rate')
 
     # model dataset
-    parser.add_argument('--model', type=str, default='ViT_mask_avg_0.5')
+    parser.add_argument('--model', type=str, default='ViT')
     parser.add_argument('--dataset', type=str, default='cifar10',
                         help='dataset')
     parser.add_argument('--data_path', type=str, default='data/',
@@ -211,31 +211,27 @@ def load_model(opt, config):
 #     shadow_model = load_VIT('./Network/VIT_Model_cifar10/VIT_NoPE_shadow.pth')
 
 
-
-if opt.select_posteriors == -1:
-    attack_model = MLP_CE()
-else:
-    attack_model = MLP_CE(selected_posteriors=opt.select_posteriors)
-
-ratio = [0, (0.0625), (0.125), (0.1875), (0.25), (0.3125), (0.375), (0.4375), (0.5), (0.5625), (0.625), (0.6875), (0.75), (0.8125), (0.875), (0.9375)]
+ratio = [0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375]
 
 
 os.makedirs("log/model/exp_attack/", exist_ok=True)
-for i in ratio:
-    opt.model = 'ViT' if i==0 else 'ViT_mask_' + str(i)
+# attack_model = [MLP_CE(opt.select_posteriors) for i in range(len(ratio))]
+for i in range(1):
+    # opt.model = "ViT"if rt==0 else 'ViT_mask_' + str(rt)
     target_model, shadow_model = load_model(opt, config)
     if opt.mia_type == "nn-based":
+        attack_model = MLP_CE(selected_posteriors=opt.select_posteriors)
         attack = attackTraining(opt, target_train_loader, target_test_loader,
                                 shadow_train_loader, shadow_test_loader, target_model, shadow_model, attack_model, device)
 
         attack.parse_dataset()
-
         acc_train = 0
         acc_test = 0
         epoch_train = opt.epochs
         train_acc, test_acc = attack.train(epoch_train)  # train 100 epoch
         target_train_acc, target_test_acc, shadow_train_acc, shadow_test_acc = attack.original_performance
-
+        # attack.attack_model = None
+        # attack_model = None
         if opt.linear_epoch == 0:
             with open("log/model/exp_attack/mia_update.txt", "a") as wf:
                 res = [epoch_train, target_train_acc, target_test_acc,
@@ -254,6 +250,8 @@ for i in ratio:
                 write_res(wf, "NN-ATK-based", res)
                 write_spilt(wf)
         print("Finish")
+        torch.cuda.empty_cache()
+
 
     elif opt.mia_type == "shf-nn-based":
         attack_model = shfattacktrain.MLP_CE()

@@ -13,7 +13,7 @@ from utils import MyConfig
 parser = argparse.ArgumentParser('argument for training')
 parser.add_argument('--ordinary_train', action="store_true", help='whether use mask')
 parser.add_argument('--epochs', type=int, default=50, help='training epoch')
-parser.add_argument('--dataset', type=str, default='cifar10', help='dataset and config')
+parser.add_argument('--dataset', type=str, default='ImageNet10', help='dataset and config')
 parser.add_argument('--model_type', type=str, default='ViT_mask', help='model name')
 parser.add_argument('--mask_type', type=str, default='pub_fill', help='if fill')
 parser.add_argument('--mix_up', action="store_true", help='use Mixup')
@@ -75,18 +75,13 @@ config = MyConfig.MyConfig(path=config_path)
 # else:
 #     mask_train(opt.model_type)
 
-# ordinary_train('ViT')
+ordinary_train('ViT')
 
-for i in range(32,34,4):
+for i in range(6,196,12):
     config.set_subkey('patch', 'num_masking_patches', i)
     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
     opt.mask_ratio = i/config.patch.num_patches
     mask_train(opt.model_type)
-# for i in range(60,64,4):
-#     config.set_subkey('patch', 'num_masking_patches', i)
-#     config.set_subkey('mask', 'mask_ratio', i/config.patch.num_patches)
-#     opt.mask_ratio = i/config.patch.num_patches
-#     mask_train(opt.model_type)
 
 
 # opt.config = 'cifar100'

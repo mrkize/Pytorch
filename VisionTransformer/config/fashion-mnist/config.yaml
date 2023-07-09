@@ -1,26 +1,26 @@
 path:
-  data_path: '../data/ImageNet10/'
-  result_path: results/VIT_ImageNet10/
-  model_path: Network/VIT_Model_ImageNet10/
-  public_path: '../data/ImageNet100/public/'
+  data_path: '../data/cifar-10/'
+  result_path: results/VIT_cifar10/
+  model_path: Network/VIT_Model_cifar10/
+  public_path: '../data/cifar-100/val/'
 
 patch:
-  image_size: 224
-  patch_size: 16
-  num_patches: 196
+  image_size: 28
+  patch_size: 4
+  num_patches: 49
   num_classes: 10
-  nums_per_class: 1300
-  nums_per_class_train: 700
-  nums_per_class_val: 700
-  embed_dim: 768
-  depth: 8
+  nums_per_class: [5000, 1000]
+  nums_per_class_train: 5000
+  nums_per_class_val: 1000
+  embed_dim: 192
+  depth: 6
   heads: 12
   mlp_dim: 512
   dropout: 0
   emb_dropout: 0.1
 
 general:
-  dataset: ImageNet10
+  dataset: CIFAR10
   use_cuda: Yes
   seed: 1001
   seed_target: 1234
@@ -37,7 +37,7 @@ learning:
   learning_rate: 0.001
   min_lr: 0.00001
   momentum: 0.9
-  epochs: 50
+  epochs: 100 #25 max 100 cifar10, 200 sinon
   decrease_lr_factor: 0.1
   decrease_lr_every: 50
   weight_decay: 0.00005

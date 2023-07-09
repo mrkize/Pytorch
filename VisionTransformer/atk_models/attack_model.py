@@ -40,14 +40,19 @@ class MLP_CE(nn.Module):
 
 class MLP_CE(nn.Module):
     def __init__(self, selected_posteriors=2):
-        super(MLP_CE, self).__init__()
+        super().__init__()
         # selected posteriors + labels
         self.input_dim = selected_posteriors + 1
         self.fc1 = nn.Linear(self.input_dim, 32)
+        torch.nn.init.normal_(self.fc1.weight.data, 0, 0.01)
         self.fc2 = nn.Linear(32, 32)
-        self.fc2 = nn.Linear(32, 32)
+        torch.nn.init.normal_(self.fc2.weight.data, 0, 0.01)
+        # self.fc2 = nn.Linear(32, 32)
+        # torch.nn.init.normal_(self.fc2.weight.data, 0, 0.01)
         # self.fc3 = nn.Linear(10, 10)
         self.fc4 = nn.Linear(32, 2)
+        torch.nn.init.normal_(self.fc4.weight.data, 0, 0.01)
+
 
     def forward(self, x):
         x = x.view(-1, self.input_dim)
